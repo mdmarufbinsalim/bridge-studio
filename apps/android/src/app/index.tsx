@@ -1,18 +1,20 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, Switch, Text, TextInput, View } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
-import type { RootState } from '../store/index.js';
+import { router, useLocalSearchParams } from 'expo-router';
+import type { RootState } from '../store/index';
 import {
   setAddress,
   setMicrophoneEnabled,
   setPlaybackEnabled,
   setStatus,
-} from '../store/connectionSlice.js';
-import { connectToServer, type BridgeAudioConnection } from '../native/BridgeAudioSession.js';
+} from '../store/connectionSlice';
+import { connectToServer, type BridgeAudioConnection } from '../native/BridgeAudioSession';
 
 export default function StatusScreen() {
   const dispatch = useDispatch();
   const connection = useSelector((state: RootState) => state.connection);
+  const params = useLocalSearchParams<{ scannedHost?: string; scannedPort?: string }>();
   const [hostInput, setHostInput] = useState(connection.host);
   const [portInput, setPortInput] = useState(String(connection.port));
   const connectionRef = useRef<BridgeAudioConnection | undefined>(undefined);
@@ -24,12 +26,11 @@ export default function StatusScreen() {
         ? 'bg-offline'
         : 'bg-muted';
 
-  const onConnect = async (): Promise<void> => {
-    const port = Number(portInput);
-    dispatch(setAddress({ host: hostInput, port }));
+  const onConnect = async (host: string, port: number): Promise<void> => {
+    dispatch(setAddress({ host, port }));
     dispatch(setStatus('connecting'));
     try {
-      const bridgeConnection = await connectToServer({ host: hostInput, port });
+      const bridgeConnection = await connectToServer({ host, port });
       connectionRef.current = bridgeConnection;
       dispatch(setStatus('connected'));
 
@@ -41,6 +42,16 @@ export default function StatusScreen() {
       console.error('[bridge-audio] connect failed', error);
     }
   };
+
+  useEffect(() => {
+    if (!params.scannedHost || !params.scannedPort) return;
+    const port = Number(params.scannedPort);
+    setHostInput(params.scannedHost);
+    setPortInput(params.scannedPort);
+    router.setParams({ scannedHost: undefined, scannedPort: undefined });
+    void onConnect(params.scannedHost, port);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run when a fresh scan result arrives
+  }, [params.scannedHost, params.scannedPort]);
 
   const onTogglePlayback = async (value: boolean): Promise<void> => {
     dispatch(setPlaybackEnabled(value));
@@ -89,9 +100,15 @@ export default function StatusScreen() {
         />
         <Pressable
           className="items-center rounded-lg bg-primary py-3"
-          onPress={() => void onConnect()}
+          onPress={() => void onConnect(hostInput, Number(portInput))}
         >
           <Text className="font-semibold text-background">Connect</Text>
+        </Pressable>
+        <Pressable
+          className="items-center rounded-lg border border-border py-3"
+          onPress={() => router.push('/scan')}
+        >
+          <Text className="font-semibold text-foreground">Scan QR Code</Text>
         </Pressable>
       </View>
 

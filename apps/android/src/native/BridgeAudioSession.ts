@@ -1,7 +1,7 @@
 import { ClientSession, type Session } from '@bridge-audio/session';
 import type { TransportAddress } from '@bridge-audio/transport';
-import { RnTcpConnector } from './RnTcpTransport.js';
-import { AudioBridge } from './AudioBridge.js';
+import { RnTcpConnector } from './RnTcpTransport';
+import { AudioBridge } from './AudioBridge';
 
 export interface BridgeAudioConnection {
   clientSession: ClientSession;

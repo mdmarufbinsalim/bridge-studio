@@ -10,6 +10,7 @@ import {
   stopPlayback,
   writePlaybackChunk,
 } from 'bridge-audio-module';
+import { requestMicrophonePermissions } from './permissions';
 
 const MIC_STREAM_ID = 'android-microphone';
 
@@ -36,6 +37,9 @@ export class AudioBridge {
 
   async enablePlayback(): Promise<void> {
     if (this.playbackActive) return;
+    // The foreground service declares type "microphone|mediaPlayback" together, so Android
+    // requires RECORD_AUDIO to be granted before starting it even for playback-only use.
+    await requestMicrophonePermissions();
     const { sampleRate, channels, bitsPerSample } = DEFAULT_AUDIO_FORMAT;
     await startPlayback(sampleRate, channels, bitsPerSample);
     this.playbackActive = true;
@@ -49,6 +53,7 @@ export class AudioBridge {
 
   async enableMicrophone(): Promise<void> {
     if (this.micActive) return;
+    await requestMicrophonePermissions();
     const format = DEFAULT_AUDIO_FORMAT;
 
     this.session.sendControl({

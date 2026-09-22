@@ -3,6 +3,7 @@ import { Session } from '@bridge-audio/session';
 import { TcpListener } from '@bridge-audio/transport';
 import { startPlaybackForwarding } from './playback.js';
 import { startMicrophoneReceiving } from './microphone.js';
+import { getLanIPv4Address, printConnectionQrCode } from './connectionInfo.js';
 
 const PORT = Number(process.env.BRIDGE_AUDIO_PORT ?? 7711);
 const PLAYBACK_ENABLED = process.env.BRIDGE_AUDIO_PLAYBACK !== '0';
@@ -69,6 +70,13 @@ async function main(): Promise<void> {
   console.log(
     `[bridge-audio] playback=${PLAYBACK_ENABLED ? 'on' : 'off'} microphone=${MICROPHONE_ENABLED ? 'on' : 'off'}`,
   );
+
+  const lanAddress = getLanIPv4Address();
+  if (lanAddress) {
+    printConnectionQrCode(lanAddress, PORT);
+  } else {
+    console.warn('[bridge-audio] no LAN IPv4 address found; enter the IP and port manually in the app');
+  }
 }
 
 main().catch((error: unknown) => {

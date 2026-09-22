@@ -7,6 +7,7 @@
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "dev:desktop": "pnpm --filter desktop start:dev",
-    "test-client": "pnpm --filter desktop test-client"
+    "test-client": "pnpm --filter desktop test-client",
+    "release:android": "bash scripts/release-android.sh"
   }
 }

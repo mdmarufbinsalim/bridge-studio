@@ -15,9 +15,19 @@
         "BLUETOOTH_CONNECT",
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_MICROPHONE",
-        "FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+        "FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "CAMERA"
       ]
     },
-    "plugins": ["expo-router", "expo-status-bar"]
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "BridgeAudio uses the camera to scan the connection QR code shown by the desktop server."
+        }
+      ]
+    ]
   }
 }

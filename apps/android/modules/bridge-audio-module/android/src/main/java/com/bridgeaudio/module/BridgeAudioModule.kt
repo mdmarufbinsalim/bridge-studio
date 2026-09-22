@@ -38,11 +38,12 @@ class BridgeAudioModule : Module() {
     }
 
     AsyncFunction("stopMicrophoneCapture") {
-      if (!capturing) return@AsyncFunction
-      captureManager.stop()
-      bluetoothRoute.stopBluetoothSco()
-      capturing = false
-      stopForegroundServiceIfIdle()
+      if (capturing) {
+        captureManager.stop()
+        bluetoothRoute.stopBluetoothSco()
+        capturing = false
+        stopForegroundServiceIfIdle()
+      }
     }
 
     AsyncFunction("startPlayback") { sampleRate: Int, channels: Int, bitsPerSample: Int ->
@@ -53,10 +54,11 @@ class BridgeAudioModule : Module() {
     }
 
     AsyncFunction("stopPlayback") {
-      if (!playing) return@AsyncFunction
-      playbackManager.stop()
-      playing = false
-      stopForegroundServiceIfIdle()
+      if (playing) {
+        playbackManager.stop()
+        playing = false
+        stopForegroundServiceIfIdle()
+      }
     }
 
     Function("writePlaybackChunk") { base64Chunk: String ->
