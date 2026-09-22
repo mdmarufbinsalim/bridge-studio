@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "BridgeAudio",
+    "slug": "bridge-audio",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "bridge-audio",
+    "userInterfaceStyle": "dark",
+    "android": {
+      "package": "com.bridgeaudio.mobile",
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": ["expo-router", "expo-status-bar"]
+  }
+}

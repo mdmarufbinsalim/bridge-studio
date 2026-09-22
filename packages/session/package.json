@@ -1,0 +1,23 @@
+{
+  "name": "@bridge-audio/session",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "oxlint src/"
+  },
+  "dependencies": {
+    "@bridge-audio/audio-core": "workspace:*",
+    "@bridge-audio/protocol": "workspace:*",
+    "@bridge-audio/transport": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3"
+  }
+}

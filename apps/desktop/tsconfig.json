@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "types": ["node"]
+  },
+  "references": [
+    { "path": "../../packages/audio-core" },
+    { "path": "../../packages/protocol" },
+    { "path": "../../packages/transport" },
+    { "path": "../../packages/session" }
+  ],
+  "include": ["src"]
+}
