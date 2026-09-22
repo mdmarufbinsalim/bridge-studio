@@ -45,12 +45,12 @@ npx expo prebuild --platform android --no-install
 # Build
 #############################################
 
-log "Building debug APK with Gradle..."
+log "Building release APK with Gradle (JS bundle embedded, no Metro needed to run it)..."
 
 cd "$ANDROID_DIR/android"
-./gradlew assembleDebug --console=plain
+./gradlew assembleRelease --console=plain
 
-BUILT_APK="$ANDROID_DIR/android/app/build/outputs/apk/debug/app-debug.apk"
+BUILT_APK="$ANDROID_DIR/android/app/build/outputs/apk/release/app-release.apk"
 [[ -f "$BUILT_APK" ]] || fail "Build succeeded but APK not found at $BUILT_APK."
 
 #############################################
