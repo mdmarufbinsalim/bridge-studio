@@ -11,16 +11,30 @@ import {
   frameMessage,
   PROTOCOL_VERSION,
 } from '@bridge-audio/protocol';
-import type { Transport } from '@bridge-audio/transport';
+import type { Transport, UdpChannel } from '@bridge-audio/transport';
 import type { SessionState } from './SessionState.js';
 
 export type SessionRole = 'server' | 'client';
+
+interface UdpPeer {
+  channel: UdpChannel;
+  host: string;
+  port: number;
+}
 
 /**
  * Wraps a single already-connected Transport with protocol-level framing,
  * handshake, and audio-frame/control-message routing. Playback and
  * microphone frames are independent logical streams distinguished by
  * StreamKind — neither is aware of the other's buffering or lifecycle.
+ *
+ * Control messages (handshake, stream lifecycle) always go over the
+ * reliable TCP-based Transport — losing or reordering those would break
+ * session state. Audio frames go over TCP too *until* attachUdpAudio() is
+ * called, after which they switch to UDP: a lost or late audio frame is
+ * just a dropped frame, not a head-of-line block on every frame behind it
+ * the way a lost TCP segment would be, which is what real-time audio
+ * actually wants.
  */
 export class Session {
   private readonly decoder = new MessageStreamDecoder();
@@ -28,6 +42,7 @@ export class Session {
   private readonly stateListeners: ((state: SessionState) => void)[] = [];
   private readonly audioFrameListeners: ((frame: AudioFrame) => void)[] = [];
   private readonly controlListeners: ((message: ControlMessage) => void)[] = [];
+  private udpPeer: UdpPeer | undefined;
 
   constructor(
     private readonly transport: Transport,
@@ -77,7 +92,20 @@ export class Session {
     this.setState('active');
   }
 
+  /** Switches outgoing/incoming audio frames onto UDP. Call after the peer's UDP address is known. */
+  attachUdpAudio(channel: UdpChannel, host: string, port: number): void {
+    this.udpPeer = { channel, host, port };
+    channel.onMessage((data) => {
+      const frame = decodeAudioFrame(data);
+      for (const listener of this.audioFrameListeners) listener(frame);
+    });
+  }
+
   sendAudioFrame(frame: AudioFrame): void {
+    if (this.udpPeer) {
+      this.udpPeer.channel.send(this.udpPeer.host, this.udpPeer.port, encodeAudioFrame(frame));
+      return;
+    }
     this.transport.send(frameMessage('audio_frame', encodeAudioFrame(frame)));
   }
 

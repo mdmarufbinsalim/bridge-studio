@@ -1,4 +1,4 @@
-import { DEFAULT_AUDIO_FORMAT, createAudioFrame } from '@bridge-audio/audio-core';
+import { DEFAULT_AUDIO_FORMAT, PcmChunker, bytesPerFrame, createAudioFrame } from '@bridge-audio/audio-core';
 import type { Session } from '@bridge-audio/session';
 import type { EventSubscription } from 'expo-modules-core';
 import {
@@ -13,6 +13,11 @@ import { requestMicrophonePermissions } from './permissions';
 import { computePcmLevel } from '../lib/audioLevel';
 
 const MIC_STREAM_ID = 'android-microphone';
+// Matches apps/desktop/src/playback.ts: audio now travels over UDP, so each frame must fit in
+// one IP packet. AudioRecord hands back whatever chunk size the OS buffer produced (often
+// several KB, well over the ~1500-byte Ethernet MTU) — this re-slices it into MTU-safe pieces
+// before framing, the same way desktop capture already does.
+const SAMPLES_PER_CHUNK = 240; // 5ms @ 48kHz
 
 /**
  * Wires an established Session to the native audio module: forwards
@@ -24,6 +29,7 @@ const MIC_STREAM_ID = 'android-microphone';
 export class AudioBridge {
   private micSeq = 0;
   private micSubscription: EventSubscription | undefined;
+  private micChunker: PcmChunker | undefined;
   private playbackActive = false;
   private micActive = false;
   private playbackLevel = 0;
@@ -72,18 +78,21 @@ export class AudioBridge {
       format,
     });
 
+    this.micChunker = new PcmChunker(bytesPerFrame(format) * SAMPLES_PER_CHUNK);
     this.micSubscription = onMicrophoneChunk((event) => {
       this.micLevel = computePcmLevel(event.chunk);
-      this.session.sendAudioFrame(
-        createAudioFrame({
-          streamId: MIC_STREAM_ID,
-          streamKind: 'microphone',
-          seq: this.micSeq++,
-          timestamp: Date.now(),
-          format,
-          payload: event.chunk,
-        }),
-      );
+      for (const payload of this.micChunker!.push(event.chunk)) {
+        this.session.sendAudioFrame(
+          createAudioFrame({
+            streamId: MIC_STREAM_ID,
+            streamKind: 'microphone',
+            seq: this.micSeq++,
+            timestamp: Date.now(),
+            format,
+            payload,
+          }),
+        );
+      }
     });
 
     await startMicrophoneCapture(format.sampleRate, format.channels, format.bitsPerSample);
@@ -95,6 +104,7 @@ export class AudioBridge {
     await stopMicrophoneCapture();
     this.micSubscription?.remove();
     this.micSubscription = undefined;
+    this.micChunker = undefined;
     this.session.sendControl({ type: 'stream_stop', streamId: MIC_STREAM_ID });
     this.micActive = false;
     this.micLevel = 0;

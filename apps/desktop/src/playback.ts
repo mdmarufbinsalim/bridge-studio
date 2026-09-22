@@ -2,7 +2,12 @@ import { bytesPerFrame, createAudioFrame, PcmChunker, type AudioFormat } from '@
 import type { Session } from '@bridge-audio/session';
 import { PipeWireAudioSource } from '@bridge-audio/platform-linux';
 
-const SAMPLES_PER_CHUNK = 480; // 10ms @ 48kHz
+// 5ms @ 48kHz. Audio now travels over UDP (see server.ts), so each frame must fit in one IP
+// packet — a datagram that gets fragmented loses everything if any one fragment is lost, which
+// defeats the point of using UDP instead of TCP in the first place. 480 samples (10ms, the old
+// TCP-era size) produced a ~1990-byte datagram, over the common 1500-byte Ethernet MTU; 240
+// keeps the whole frame (payload + protocol header + UDP/IP headers) safely under it.
+const SAMPLES_PER_CHUNK = 240;
 export const PLAYBACK_STREAM_ID = 'desktop-playback';
 
 /**

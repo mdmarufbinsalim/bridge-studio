@@ -1,6 +1,6 @@
 import { DEFAULT_AUDIO_FORMAT } from '@bridge-audio/audio-core';
 import { Session } from '@bridge-audio/session';
-import { TcpListener } from '@bridge-audio/transport';
+import { NodeUdpChannel, TcpListener } from '@bridge-audio/transport';
 import { startPlaybackForwarding } from './playback.js';
 import { startMicrophoneReceiving } from './microphone.js';
 import { getLanIPv4Address, printConnectionQrCode } from './connectionInfo.js';
@@ -11,13 +11,26 @@ const MICROPHONE_ENABLED = process.env.BRIDGE_AUDIO_MIC !== '0';
 
 async function main(): Promise<void> {
   const listener = new TcpListener(PORT);
+  // Shared with every session: audio frames switch onto this the moment we learn the
+  // client's UDP address (its first "hello" datagram), so a lost frame just gets dropped
+  // instead of head-of-line-blocking every frame behind it the way a lost TCP segment does.
+  const udpChannel = await NodeUdpChannel.bind(PORT);
+  console.log(`[bridge-audio] UDP audio channel listening on port ${PORT}`);
 
   await listener.start((transport) => {
     const session = new Session(transport, 'server', 'desktop-server');
     console.log('[bridge-audio] client connecting...');
 
     let framesSinceLog = 0;
+    let udpAttached = false;
     const stopFns: (() => Promise<void>)[] = [];
+
+    udpChannel.onMessage((_data, remoteHost, remotePort) => {
+      if (udpAttached) return;
+      udpAttached = true;
+      session.attachUdpAudio(udpChannel, remoteHost, remotePort);
+      console.log(`[bridge-audio] audio switched to UDP (peer ${remoteHost}:${remotePort})`);
+    });
 
     session.onStateChange((state) => {
       console.log(`[bridge-audio] session state: ${state}`);
