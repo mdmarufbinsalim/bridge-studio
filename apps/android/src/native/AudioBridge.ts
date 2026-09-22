@@ -2,7 +2,6 @@ import { DEFAULT_AUDIO_FORMAT, createAudioFrame } from '@bridge-audio/audio-core
 import type { Session } from '@bridge-audio/session';
 import type { EventSubscription } from 'expo-modules-core';
 import {
-  decodeMicrophoneChunk,
   onMicrophoneChunk,
   startMicrophoneCapture,
   startPlayback,
@@ -11,6 +10,7 @@ import {
   writePlaybackChunk,
 } from 'bridge-audio-module';
 import { requestMicrophonePermissions } from './permissions';
+import { computePcmLevel } from '../lib/audioLevel';
 
 const MIC_STREAM_ID = 'android-microphone';
 
@@ -26,13 +26,21 @@ export class AudioBridge {
   private micSubscription: EventSubscription | undefined;
   private playbackActive = false;
   private micActive = false;
+  private playbackLevel = 0;
+  private micLevel = 0;
 
   constructor(private readonly session: Session) {
     this.session.onAudioFrame((frame) => {
       if (frame.streamKind === 'playback') {
+        this.playbackLevel = computePcmLevel(frame.payload);
         writePlaybackChunk(frame.payload);
       }
     });
+  }
+
+  /** Current 0..1 output (playback) and input (microphone) levels, updated on every audio frame. */
+  getLevels(): { playback: number; mic: number } {
+    return { playback: this.playbackLevel, mic: this.micLevel };
   }
 
   async enablePlayback(): Promise<void> {
@@ -49,6 +57,7 @@ export class AudioBridge {
     if (!this.playbackActive) return;
     await stopPlayback();
     this.playbackActive = false;
+    this.playbackLevel = 0;
   }
 
   async enableMicrophone(): Promise<void> {
@@ -64,6 +73,7 @@ export class AudioBridge {
     });
 
     this.micSubscription = onMicrophoneChunk((event) => {
+      this.micLevel = computePcmLevel(event.chunk);
       this.session.sendAudioFrame(
         createAudioFrame({
           streamId: MIC_STREAM_ID,
@@ -71,7 +81,7 @@ export class AudioBridge {
           seq: this.micSeq++,
           timestamp: Date.now(),
           format,
-          payload: decodeMicrophoneChunk(event),
+          payload: event.chunk,
         }),
       );
     });
@@ -87,6 +97,7 @@ export class AudioBridge {
     this.micSubscription = undefined;
     this.session.sendControl({ type: 'stream_stop', streamId: MIC_STREAM_ID });
     this.micActive = false;
+    this.micLevel = 0;
   }
 
   async teardown(): Promise<void> {

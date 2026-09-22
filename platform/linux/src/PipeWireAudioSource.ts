@@ -75,6 +75,8 @@ export class PipeWireAudioSource implements AudioSource {
       target,
       '--media-category',
       'Capture',
+      '--latency',
+      '20ms',
       '-',
     ];
 

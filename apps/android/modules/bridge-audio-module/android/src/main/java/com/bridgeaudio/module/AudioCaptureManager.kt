@@ -29,7 +29,9 @@ class AudioCaptureManager {
 
     val minBufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, encoding)
     require(minBufferSize > 0) { "Unsupported AudioRecord configuration for this device" }
-    val bufferSize = minBufferSize * 2
+    // Kept at the device minimum — see AudioPlaybackManager for why padding this "for safety"
+    // was tried and made real-world lag worse rather than better.
+    val bufferSize = minBufferSize
 
     val record = AudioRecord(
       MediaRecorder.AudioSource.VOICE_COMMUNICATION,

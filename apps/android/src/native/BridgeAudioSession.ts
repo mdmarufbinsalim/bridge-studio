@@ -6,6 +6,8 @@ import { AudioBridge } from './AudioBridge';
 export interface BridgeAudioConnection {
   clientSession: ClientSession;
   getAudioBridge(): AudioBridge | undefined;
+  /** Intentional, user-initiated disconnect — unlike a network drop, this does not reconnect. */
+  disconnect(): Promise<void>;
 }
 
 /**
@@ -38,5 +40,9 @@ export async function connectToServer(address: TransportAddress): Promise<Bridge
   return {
     clientSession,
     getAudioBridge: () => audioBridge,
+    disconnect: async () => {
+      clientSession.stop();
+      await audioBridge?.teardown();
+    },
   };
 }

@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import { router } from 'expo-router';
+import { Camera, X } from 'lucide-react-native';
 import { parseConnectionUri } from '../lib/connectionUri';
 
 export default function ScanScreen() {
@@ -27,6 +28,9 @@ export default function ScanScreen() {
   if (!permission.granted) {
     return (
       <View className="flex-1 items-center justify-center gap-4 bg-background px-6">
+        <View className="h-16 w-16 items-center justify-center rounded-full bg-surface">
+          <Camera size={28} color="#8E8E93" />
+        </View>
         <Text className="text-center text-foreground">
           Camera access is needed to scan the connection QR code shown by the desktop server.
         </Text>
@@ -48,8 +52,18 @@ export default function ScanScreen() {
         barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
         onBarcodeScanned={onBarcodeScanned}
       />
+      <View className="absolute inset-0 items-center justify-center">
+        <View className="h-64 w-64 rounded-2xl border-2 border-primary/70" />
+      </View>
+      <View className="absolute inset-x-0 top-16 items-center px-6">
+        <Text className="text-center text-foreground">Point your camera at the QR code on your PC</Text>
+      </View>
       <View className="absolute inset-x-0 bottom-12 items-center">
-        <Pressable className="rounded-lg bg-surface px-6 py-3" onPress={() => router.back()}>
+        <Pressable
+          className="flex-row items-center gap-2 rounded-lg bg-surface px-6 py-3"
+          onPress={() => router.back()}
+        >
+          <X size={18} color="#EBEBF0" />
           <Text className="text-foreground">Cancel</Text>
         </Pressable>
       </View>

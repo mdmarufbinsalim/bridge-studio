@@ -52,6 +52,8 @@ export class PipeWireVirtualMicSink implements AudioSink {
       pwCatSampleFormat(this.format),
       '--target',
       this.sinkName,
+      '--latency',
+      '20ms',
       '-',
     ];
 

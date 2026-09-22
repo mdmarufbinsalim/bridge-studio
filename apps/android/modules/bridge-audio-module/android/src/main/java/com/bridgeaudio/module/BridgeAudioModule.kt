@@ -1,6 +1,5 @@
 package com.bridgeaudio.module
 
-import android.util.Base64
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
@@ -32,7 +31,7 @@ class BridgeAudioModule : Module() {
       bluetoothRoute.startBluetoothScoForCapture()
       ensureForegroundServiceRunning()
       captureManager.start(sampleRate, channels, bitsPerSample) { chunk ->
-        sendEvent("onMicrophoneChunk", mapOf("base64Chunk" to Base64.encodeToString(chunk, Base64.NO_WRAP)))
+        sendEvent("onMicrophoneChunk", mapOf("chunk" to chunk))
       }
       capturing = true
     }
@@ -61,8 +60,8 @@ class BridgeAudioModule : Module() {
       }
     }
 
-    Function("writePlaybackChunk") { base64Chunk: String ->
-      playbackManager.write(Base64.decode(base64Chunk, Base64.NO_WRAP))
+    Function("writePlaybackChunk") { chunk: ByteArray ->
+      playbackManager.write(chunk)
     }
 
     OnDestroy {
