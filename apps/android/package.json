@@ -8,7 +8,13 @@
     "android": "expo run:android",
     "lint": "expo lint"
   },
+  "expo": {
+    "autolinking": {
+      "searchPaths": ["./modules"]
+    }
+  },
   "dependencies": {
+    "bridge-audio-module": "link:./modules/bridge-audio-module",
     "@bridge-audio/audio-core": "workspace:*",
     "@bridge-audio/protocol": "workspace:*",
     "@bridge-audio/transport": "workspace:*",
@@ -26,6 +32,7 @@
     "react-native-css-interop": "^0.2.6",
     "react-native-safe-area-context": "^5.7.0",
     "react-native-screens": "^4.26.2",
+    "react-native-tcp-socket": "^6.3.0",
     "react-redux": "^9.3.0",
     "tailwindcss": "^3"
   },

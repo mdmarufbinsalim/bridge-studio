@@ -4,3 +4,4 @@ export * from './AudioFrame.js';
 export * from './RingBuffer.js';
 export * from './JitterBuffer.js';
 export * from './AudioStream.js';
+export * from './PcmChunker.js';

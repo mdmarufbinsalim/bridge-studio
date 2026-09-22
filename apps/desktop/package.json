@@ -14,7 +14,8 @@
     "@bridge-audio/audio-core": "workspace:*",
     "@bridge-audio/protocol": "workspace:*",
     "@bridge-audio/transport": "workspace:*",
-    "@bridge-audio/session": "workspace:*"
+    "@bridge-audio/session": "workspace:*",
+    "@bridge-audio/platform-linux": "workspace:*"
   },
   "devDependencies": {
     "typescript": "~6.0.3",

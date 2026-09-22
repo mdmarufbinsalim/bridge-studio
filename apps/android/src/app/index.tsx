@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, Switch, Text, TextInput, View } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import type { RootState } from '../store/index.js';
@@ -8,13 +8,14 @@ import {
   setPlaybackEnabled,
   setStatus,
 } from '../store/connectionSlice.js';
-import { connectToServer } from '../native/BridgeAudioSession.js';
+import { connectToServer, type BridgeAudioConnection } from '../native/BridgeAudioSession.js';
 
 export default function StatusScreen() {
   const dispatch = useDispatch();
   const connection = useSelector((state: RootState) => state.connection);
   const [hostInput, setHostInput] = useState(connection.host);
   const [portInput, setPortInput] = useState(String(connection.port));
+  const connectionRef = useRef<BridgeAudioConnection | undefined>(undefined);
 
   const statusColor =
     connection.status === 'connected'
@@ -28,12 +29,31 @@ export default function StatusScreen() {
     dispatch(setAddress({ host: hostInput, port }));
     dispatch(setStatus('connecting'));
     try {
-      await connectToServer({ host: hostInput, port });
+      const bridgeConnection = await connectToServer({ host: hostInput, port });
+      connectionRef.current = bridgeConnection;
       dispatch(setStatus('connected'));
+
+      const bridge = bridgeConnection.getAudioBridge();
+      if (connection.playbackEnabled) await bridge?.enablePlayback();
+      if (connection.microphoneEnabled) await bridge?.enableMicrophone();
     } catch (error) {
       dispatch(setStatus('error'));
       console.error('[bridge-audio] connect failed', error);
     }
+  };
+
+  const onTogglePlayback = async (value: boolean): Promise<void> => {
+    dispatch(setPlaybackEnabled(value));
+    const bridge = connectionRef.current?.getAudioBridge();
+    if (value) await bridge?.enablePlayback();
+    else await bridge?.disablePlayback();
+  };
+
+  const onToggleMicrophone = async (value: boolean): Promise<void> => {
+    dispatch(setMicrophoneEnabled(value));
+    const bridge = connectionRef.current?.getAudioBridge();
+    if (value) await bridge?.enableMicrophone();
+    else await bridge?.disableMicrophone();
   };
 
   return (
@@ -80,14 +100,14 @@ export default function StatusScreen() {
           <Text className="text-foreground">Playback (PC → earbuds)</Text>
           <Switch
             value={connection.playbackEnabled}
-            onValueChange={(value) => void dispatch(setPlaybackEnabled(value))}
+            onValueChange={(value) => void onTogglePlayback(value)}
           />
         </View>
         <View className="flex-row items-center justify-between">
           <Text className="text-foreground">Microphone (earbuds → PC)</Text>
           <Switch
             value={connection.microphoneEnabled}
-            onValueChange={(value) => void dispatch(setMicrophoneEnabled(value))}
+            onValueChange={(value) => void onToggleMicrophone(value)}
           />
         </View>
       </View>

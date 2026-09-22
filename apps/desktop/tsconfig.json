@@ -9,7 +9,8 @@
     { "path": "../../packages/audio-core" },
     { "path": "../../packages/protocol" },
     { "path": "../../packages/transport" },
-    { "path": "../../packages/session" }
+    { "path": "../../packages/session" },
+    { "path": "../../platform/linux" }
   ],
   "include": ["src"]
 }
