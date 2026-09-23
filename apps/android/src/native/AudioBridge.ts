@@ -1,4 +1,10 @@
-import { DEFAULT_AUDIO_FORMAT, PcmChunker, bytesPerFrame, createAudioFrame } from '@bridge-audio/audio-core';
+import {
+  DEFAULT_AUDIO_FORMAT,
+  JitterBuffer,
+  PcmChunker,
+  bytesPerFrame,
+  createAudioFrame,
+} from '@bridge-audio/audio-core';
 import type { Session } from '@bridge-audio/session';
 import type { EventSubscription } from 'expo-modules-core';
 import {
@@ -11,8 +17,14 @@ import {
 } from 'bridge-audio-module';
 import { requestMicrophonePermissions } from './permissions';
 import { computePcmLevel } from '../lib/audioLevel';
+import { applyGainRamp } from '../lib/pcmFade';
 
 const MIC_STREAM_ID = 'android-microphone';
+// 5ms/frame; UDP has no retransmission and no ordering guarantee, so this bounds both how many
+// out-of-order frames we'll hold while waiting for a gap to fill in, and — just as importantly —
+// how long we'll stall waiting for a frame that never arrives before giving up on it (see
+// JitterBuffer.skipToOldestPending). 6 frames = 30ms worst-case stall.
+const PLAYBACK_JITTER_CAPACITY = 6;
 // Matches apps/desktop/src/playback.ts: audio now travels over UDP, so each frame must fit in
 // one IP packet. AudioRecord hands back whatever chunk size the OS buffer produced (often
 // several KB, well over the ~1500-byte Ethernet MTU) — this re-slices it into MTU-safe pieces
@@ -34,14 +46,47 @@ export class AudioBridge {
   private micActive = false;
   private playbackLevel = 0;
   private micLevel = 0;
+  private readonly playbackJitterBuffer = new JitterBuffer(PLAYBACK_JITTER_CAPACITY);
+  private lastPlaybackSeq: number | undefined;
+  private lastPlaybackPayload: Uint8Array | undefined;
 
   constructor(private readonly session: Session) {
     this.session.onAudioFrame((frame) => {
-      if (frame.streamKind === 'playback') {
-        this.playbackLevel = computePcmLevel(frame.payload);
-        writePlaybackChunk(frame.payload);
+      if (frame.streamKind !== 'playback') return;
+      this.playbackJitterBuffer.push(frame);
+      for (const ready of this.playbackJitterBuffer.drain()) {
+        this.playReadyFrame(ready.seq, ready.payload);
       }
     });
+  }
+
+  /**
+   * Plays a frame the jitter buffer has released in order. If seq skipped
+   * ahead of the last frame actually played (JitterBuffer gave up waiting
+   * on one or more missing frames), fills the gap by repeating the last
+   * real payload rather than leaving hard silence — a brief repeat reads
+   * as far less jarring than a dropout. The repeats fade linearly toward
+   * silence rather than holding flat, so by the time real audio resumes
+   * the splice happens from near-zero amplitude instead of full volume —
+   * holding flat produces an audible click/static "tick" at that splice
+   * point, since jumping straight from a stale sample back to a live one
+   * is an abrupt amplitude discontinuity.
+   */
+  private playReadyFrame(seq: number, payload: Uint8Array): void {
+    if (this.lastPlaybackSeq !== undefined && this.lastPlaybackPayload !== undefined) {
+      // Bounded defensively even though the jitter buffer's own capacity already caps how far
+      // seq can jump between consecutively drained frames — never repeat more than a handful.
+      const missing = Math.min(seq - this.lastPlaybackSeq - 1, PLAYBACK_JITTER_CAPACITY);
+      for (let i = 0; i < missing; i += 1) {
+        const startGain = 1 - i / missing;
+        const endGain = 1 - (i + 1) / missing;
+        writePlaybackChunk(applyGainRamp(this.lastPlaybackPayload, startGain, endGain));
+      }
+    }
+    this.playbackLevel = computePcmLevel(payload);
+    writePlaybackChunk(payload);
+    this.lastPlaybackSeq = seq;
+    this.lastPlaybackPayload = payload;
   }
 
   /** Current 0..1 output (playback) and input (microphone) levels, updated on every audio frame. */
@@ -64,6 +109,9 @@ export class AudioBridge {
     await stopPlayback();
     this.playbackActive = false;
     this.playbackLevel = 0;
+    this.playbackJitterBuffer.reset();
+    this.lastPlaybackSeq = undefined;
+    this.lastPlaybackPayload = undefined;
   }
 
   async enableMicrophone(): Promise<void> {

@@ -2,8 +2,10 @@ import type { AudioFrame } from './AudioFrame.js';
 
 /**
  * Reorders frames that arrive out of sequence within a bounded window and
- * drops frames that are too late to reconstruct in order. Capacity bounds
- * memory; it does not guarantee playout timing on its own.
+ * skips forward over frames that are too late (or never arrive at all —
+ * routine with UDP, which has no retransmission) to reconstruct in order.
+ * Capacity bounds memory and, just as importantly, bounds how long drain()
+ * will wait for a missing frame before giving up on it.
  */
 export class JitterBuffer {
   private readonly pending = new Map<number, AudioFrame>();
@@ -26,8 +28,8 @@ export class JitterBuffer {
     }
     if (this.pending.has(frame.seq)) return;
     this.pending.set(frame.seq, frame);
-    while (this.pending.size > this.capacity) {
-      this.dropOldestPending();
+    if (this.pending.size > this.capacity) {
+      this.skipToOldestPending();
     }
   }
 
@@ -45,17 +47,23 @@ export class JitterBuffer {
     return ready;
   }
 
-  private dropOldestPending(): void {
+  /**
+   * Called when the buffer is over capacity, meaning nextSeq's frame is
+   * either lost or too delayed to keep waiting for. Jumps nextSeq forward
+   * to the oldest frame actually on hand — merely deleting a pending entry
+   * without also advancing nextSeq (the previous behavior) never unblocks
+   * drain() once the frame it's waiting on is the one that's missing, so
+   * every push past that point would just accumulate and get evicted again,
+   * draining nothing, forever.
+   */
+  private skipToOldestPending(): void {
     let oldestSeq: number | undefined;
     for (const seq of this.pending.keys()) {
       if (oldestSeq === undefined || seq < oldestSeq) oldestSeq = seq;
     }
-    if (oldestSeq !== undefined) {
-      this.pending.delete(oldestSeq);
-      this.droppedLateCount += 1;
-      if (this.nextSeq !== undefined && oldestSeq === this.nextSeq) {
-        this.nextSeq += 1;
-      }
+    if (oldestSeq !== undefined && this.nextSeq !== undefined && oldestSeq > this.nextSeq) {
+      this.droppedLateCount += oldestSeq - this.nextSeq;
+      this.nextSeq = oldestSeq;
     }
   }
 

@@ -7,6 +7,13 @@ import { PipeWireAudioSource } from '@bridge-audio/platform-linux';
 // defeats the point of using UDP instead of TCP in the first place. 480 samples (10ms, the old
 // TCP-era size) produced a ~1990-byte datagram, over the common 1500-byte Ethernet MTU; 240
 // keeps the whole frame (payload + protocol header + UDP/IP headers) safely under it.
+//
+// A paced sender (queue + setInterval, decoupling "when PipeWire produced this" from "when we
+// transmit it") was tried here and made things worse, not better: its small bounded queue
+// dropped legitimate audio every time PipeWire delivered a burst bigger than the queue's
+// capacity, which happens routinely — trading bursty-but-lossless delivery for smoother-but-
+// lossy delivery. Sending immediately as PcmChunker produces frames, with no queue in between,
+// is back to being correct: never drops anything that wasn't late/stale.
 const SAMPLES_PER_CHUNK = 240;
 export const PLAYBACK_STREAM_ID = 'desktop-playback';
 
