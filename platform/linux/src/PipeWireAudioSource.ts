@@ -1,12 +1,22 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import type { AudioFormat, AudioSource } from '@bridge-audio/audio-core';
-import { waitForDefaultSinkMonitor } from './pactlHelpers.js';
+import { linkPorts } from './pactlHelpers.js';
 import { pwCatSampleFormat } from './pwCatFormat.js';
 
+const HEALTH_CHECK_INTERVAL_MS = 3000;
+/**
+ * A fixed, unique node name for our own capture stream, so it can be targeted precisely by
+ * linkPorts rather than by pw-cat's generic default "pw-cat" name (ambiguous — the microphone
+ * direction spawns its own pw-cat process too, and manual/diagnostic pw-cat invocations are common
+ * on this kind of system).
+ */
+const CAPTURE_NODE_NAME = 'bridgeaudio-desktop-capture';
+const CHANNEL_PORT_SUFFIXES = ['FL', 'FR'] as const;
+
 export interface PipeWireAudioSourceOptions {
-  /** PipeWire/Pulse node to capture from, e.g. "alsa_output.foo.monitor". Defaults to the current default sink's monitor. */
-  target?: string;
+  /** PipeWire/Pulse node to capture from, e.g. "bridgeaudio_speaker.monitor". Required. */
+  target: string;
   /** How many times to retry if the capture target isn't ready yet. */
   maxAttempts?: number;
 }
@@ -17,29 +27,37 @@ const RETRY_DELAY_MS = 300;
 const STARTUP_GRACE_MS = 500;
 
 /**
- * Captures desktop playback audio via `pw-cat --record`, targeting the
- * default sink's monitor so whatever Linux apps are playing becomes this
- * source's output. All PipeWire-specific concepts (targets, monitors, the
- * `pw-cat` CLI itself) are confined to this file — audio-core/protocol/
- * transport/session only ever see the platform-agnostic AudioSource
- * interface.
+ * Captures desktop playback audio via `pw-cat --record`, targeting a fixed,
+ * caller-owned sink's monitor (normally PipeWireVirtualSpeakerSink's own
+ * sink — see its docs for why a fixed sink is used instead of chasing
+ * PipeWire's "default sink"). All PipeWire-specific concepts (targets,
+ * monitors, the `pw-cat` CLI itself) are confined to this file —
+ * audio-core/protocol/transport/session only ever see the platform-agnostic
+ * AudioSource interface.
  *
- * The default sink's monitor can be transiently unavailable — PipeWire
- * still settling at startup, or a fallback/dummy sink flapping in and out
- * when no other sink exists yet — and pw-cat fails at runtime rather than
- * at spawn, so a bad attempt looks like a normal launch followed by an
- * near-immediate exit. start() retries against a freshly re-resolved
- * target when that happens instead of silently leaving no data flowing.
+ * pw-cat can also just die mid-session (the target sink getting torn down
+ * and recreated, a transient PipeWire hiccup) — a periodic health check
+ * restarts it if that happens, rather than leaving capture silently dead
+ * until a full app reconnect.
  */
 export class PipeWireAudioSource implements AudioSource {
   private process: ChildProcessByStdio<null, Readable, Readable> | undefined;
+  private healthCheckTimer: NodeJS.Timeout | undefined;
+  private onDataCallback: ((chunk: Uint8Array) => void) | undefined;
+  private restarting = false;
+  private active = false;
+  private readonly target: string;
 
-  constructor(readonly format: AudioFormat, private readonly options: PipeWireAudioSourceOptions = {}) {}
+  constructor(readonly format: AudioFormat, private readonly options: PipeWireAudioSourceOptions) {
+    this.target = options.target;
+  }
 
   async start(onData: (chunk: Uint8Array) => void): Promise<void> {
     if (this.process) {
       throw new Error('PipeWireAudioSource already started');
     }
+    this.onDataCallback = onData;
+    this.active = true;
 
     const maxAttempts = this.options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
     let lastError: Error | undefined;
@@ -47,6 +65,7 @@ export class PipeWireAudioSource implements AudioSource {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
         this.process = await this.spawnAndVerify(onData);
+        this.startHealthCheck();
         return;
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
@@ -59,10 +78,32 @@ export class PipeWireAudioSource implements AudioSource {
     throw new Error(`PipeWireAudioSource failed to start after ${maxAttempts} attempts: ${lastError?.message}`);
   }
 
+  private startHealthCheck(): void {
+    this.healthCheckTimer = setInterval(() => {
+      void this.checkForDeadProcessAndRestart();
+    }, HEALTH_CHECK_INTERVAL_MS);
+  }
+
+  private async checkForDeadProcessAndRestart(): Promise<void> {
+    if (this.restarting || !this.active || !this.onDataCallback || this.process) return;
+
+    this.restarting = true;
+    const onData = this.onDataCallback;
+    try {
+      this.process = await this.spawnAndVerify(onData);
+      console.log('[platform-linux] capture recovered');
+    } catch (error) {
+      // Target still not ready — logged, not thrown; the next health-check tick retries.
+      console.error('[platform-linux] capture (re)start attempt failed, will retry:', error);
+    } finally {
+      this.restarting = false;
+    }
+  }
+
   private async spawnAndVerify(
     onData: (chunk: Uint8Array) => void,
   ): Promise<ChildProcessByStdio<null, Readable, Readable>> {
-    const target = this.options.target ?? (await waitForDefaultSinkMonitor());
+    const target = this.target;
     console.log(`[platform-linux] capturing desktop audio from: ${target}`);
     const args = [
       '--record',
@@ -72,12 +113,20 @@ export class PipeWireAudioSource implements AudioSource {
       String(this.format.channels),
       '--format',
       pwCatSampleFormat(this.format),
+      // "0" means don't auto-link at all — confirmed in real-world testing that relying on
+      // --target <sink-name> + --media-category Capture to auto-link to that sink's monitor is
+      // unreliable: observed it link to a completely different node (our own microphone-direction
+      // remap-source, of all things) instead of the sink we explicitly named. Every link this
+      // process ends up with now comes from our own explicit linkPorts calls below, which is
+      // unambiguous by construction.
       '--target',
-      target,
+      '0',
       '--media-category',
       'Capture',
       '--latency',
       '20ms',
+      '-P',
+      `node.name=${CAPTURE_NODE_NAME}`,
       '-',
     ];
 
@@ -105,15 +154,54 @@ export class PipeWireAudioSource implements AudioSource {
       throw new Error(`pw-cat exited immediately (target: ${target}): ${lastStderr || 'no output'}`);
     }
 
+    if (this.format.channels === 1 || this.format.channels === 2) {
+      const suffixes = this.format.channels === 1 ? (['MONO'] as const) : CHANNEL_PORT_SUFFIXES;
+      try {
+        await Promise.all(
+          suffixes.map((suffix) =>
+            linkPorts(`${target}:monitor_${suffix}`, `${CAPTURE_NODE_NAME}:input_${suffix}`).catch((error) => {
+              // "File exists" means the link is already there — e.g. pw-cat's own --target/
+              // --media-category auto-link already won this time. That's the desired end state,
+              // not a failure; only a genuinely failed link should abort this attempt.
+              if (!String(error).includes('File exists')) throw error;
+            }),
+          ),
+        );
+      } catch (error) {
+        child.kill('SIGTERM');
+        throw new Error(`could not link capture to "${target}"'s monitor ports: ${String(error)}`);
+      }
+    } else {
+      console.warn(
+        `[platform-linux] unrecognized channel count (${this.format.channels}) for explicit port linking — ` +
+          'relying on auto-link, which may silently produce no audio if something else already holds the monitor',
+      );
+    }
+
     child.stdout.on('data', (chunk: Buffer) => onData(new Uint8Array(chunk)));
     child.on('error', (error) => {
       console.error('[platform-linux] pw-cat record process error:', error);
+    });
+    child.once('exit', () => {
+      // Let the health check notice via `this.process` and restart, rather than reacting here —
+      // a single source of truth for "is capture currently running."
+      if (this.process === child) this.process = undefined;
     });
 
     return child;
   }
 
   async stop(): Promise<void> {
+    this.active = false;
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = undefined;
+    }
+    this.onDataCallback = undefined;
+    await this.killProcess();
+  }
+
+  private async killProcess(): Promise<void> {
     const child = this.process;
     this.process = undefined;
     if (!child) return;

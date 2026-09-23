@@ -9,7 +9,18 @@ export interface PipeWireVirtualMicSinkOptions {
   description?: string;
 }
 
-const DEFAULT_DESCRIPTION = 'BridgeAudio Microphone';
+// No space — see PipeWireVirtualSpeakerSink's DEFAULT_DESCRIPTION for why.
+const DEFAULT_DESCRIPTION = 'BridgeAudio-Microphone';
+
+/**
+ * Deliberately low — this sink exists only to carry the phone's mic audio into a source other
+ * apps can select as their microphone; it should never win the session manager's default-*output*
+ * sink ranking. See PipeWireVirtualSpeakerSink's SINK_PRIORITY and loadNullSink's priority docs:
+ * confirmed in real-world testing that without an explicit low priority here, this sink (being
+ * created after the speaker sink) kept winning that ranking on its own recomputes — silently
+ * mixing real app audio into the same sink as the phone's live mic input.
+ */
+const SINK_PRIORITY = 0;
 
 /**
  * Publishes received PCM as a PipeWire virtual microphone: loads a
@@ -47,7 +58,7 @@ export class PipeWireVirtualMicSink implements AudioSink {
       throw new Error('PipeWireVirtualMicSink already started');
     }
 
-    this.nullSinkModuleId = await loadNullSink(this.sinkName, this.description);
+    this.nullSinkModuleId = await loadNullSink(this.sinkName, this.description, SINK_PRIORITY);
     this.remapSourceModuleId = await loadRemapSource(
       `${this.sinkName}.monitor`,
       this.sourceName,

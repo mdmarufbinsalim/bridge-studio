@@ -1,6 +1,7 @@
 import { DEFAULT_AUDIO_FORMAT } from '@bridge-audio/audio-core';
 import { Session } from '@bridge-audio/session';
 import { NodeUdpChannel, TcpListener } from '@bridge-audio/transport';
+import { OWN_SPEAKER_SINK_NAME, setDefaultSink } from '@bridge-audio/platform-linux';
 import { startPlaybackForwarding } from './playback.js';
 import { startMicrophoneReceiving } from './microphone.js';
 import { getLanIPv4Address, printConnectionQrCode } from './connectionInfo.js';
@@ -16,11 +17,23 @@ const MICROPHONE_ENABLED = process.env.BRIDGE_AUDIO_MIC !== '0';
 // unless something explicitly listens for the signal and does it.
 const activeStopFns = new Set<() => Promise<void>>();
 
+/**
+ * If any individual stop() hangs (e.g. waiting on a child process 'exit'
+ * event that never fires), the cleanup below could wait forever and
+ * process.exit() would never run — observed in testing as a server that
+ * logged "shutting down" but never actually exited, forcing a kill -9,
+ * which is exactly what skips this cleanup and leaks the virtual mic sink
+ * in the first place. A hard timeout guarantees the process always exits.
+ */
+const SHUTDOWN_TIMEOUT_MS = 5000;
+
 async function shutdown(): Promise<void> {
   console.log('[bridge-audio] shutting down, cleaning up active streams...');
-  await Promise.all([...activeStopFns].map((stop) => stop())).catch((error: unknown) => {
+  const cleanup = Promise.all([...activeStopFns].map((stop) => stop())).catch((error: unknown) => {
     console.error('[bridge-audio] error during shutdown cleanup:', error);
   });
+  const timeout = new Promise((resolve) => setTimeout(resolve, SHUTDOWN_TIMEOUT_MS));
+  await Promise.race([cleanup, timeout]);
   process.exit(0);
 }
 
@@ -93,6 +106,21 @@ async function main(): Promise<void> {
           const stop = await startMicrophoneReceiving(session, DEFAULT_AUDIO_FORMAT);
           stopFns.push(stop);
           activeStopFns.add(stop);
+        }
+        if (PLAYBACK_ENABLED) {
+          // PipeWireVirtualSpeakerSink already gives the speaker sink a priority high enough that
+          // the session manager's own default-sink ranking picks it over the microphone sink on
+          // its own (see SINK_PRIORITY there and in PipeWireVirtualMicSink) — that's the durable
+          // fix, since that ranking recomputes on its own on every new node and a one-off
+          // set-default-sink call here can only ever win until the next such recompute. This is
+          // just a fast nudge in case the microphone sink (created just above) briefly holds
+          // default until the session manager's next recompute; confirmed in real-world testing
+          // that without the priority fix, that gap let real app audio and the phone's live mic
+          // input mix into the same sink (heard as your own voice echoed back, and playback
+          // sounding quieter — two streams summed together).
+          await setDefaultSink(OWN_SPEAKER_SINK_NAME).catch((error: unknown) => {
+            console.error('[bridge-audio] could not re-assert speaker sink as default:', error);
+          });
         }
       } catch (error) {
         console.error('[bridge-audio] failed to activate audio streams:', error);

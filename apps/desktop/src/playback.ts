@@ -1,6 +1,6 @@
 import { bytesPerFrame, createAudioFrame, PcmChunker, type AudioFormat } from '@bridge-audio/audio-core';
 import type { Session } from '@bridge-audio/session';
-import { PipeWireAudioSource } from '@bridge-audio/platform-linux';
+import { PipeWireAudioSource, PipeWireVirtualSpeakerSink } from '@bridge-audio/platform-linux';
 
 // 5ms @ 48kHz. Audio travels over UDP (see server.ts), so each frame must fit in one IP packet —
 // a fragmented datagram loses everything if any one fragment is lost. 480 samples (10ms, the old
@@ -33,7 +33,11 @@ export async function startPlaybackForwarding(
   session: Session,
   format: AudioFormat,
 ): Promise<() => Promise<void>> {
-  const source = new PipeWireAudioSource(format);
+  const speakerSink = new PipeWireVirtualSpeakerSink();
+  await speakerSink.start();
+  console.log(`[bridge-audio] virtual speaker ready: ${speakerSink.sinkNameValue} (set as default output)`);
+
+  const source = new PipeWireAudioSource(format, { target: speakerSink.monitorName });
   const chunker = new PcmChunker(bytesPerFrame(format) * SAMPLES_PER_CHUNK);
   let seq = 0;
 
@@ -44,23 +48,32 @@ export async function startPlaybackForwarding(
     format,
   });
 
-  await source.start((chunk) => {
-    for (const frameBytes of chunker.push(chunk)) {
-      session.sendAudioFrame(
-        createAudioFrame({
-          streamId: PLAYBACK_STREAM_ID,
-          streamKind: 'playback',
-          seq: seq++,
-          timestamp: Date.now(),
-          format,
-          payload: frameBytes,
-        }),
-      );
-    }
-  });
+  try {
+    await source.start((chunk) => {
+      for (const frameBytes of chunker.push(chunk)) {
+        session.sendAudioFrame(
+          createAudioFrame({
+            streamId: PLAYBACK_STREAM_ID,
+            streamKind: 'playback',
+            seq: seq++,
+            timestamp: Date.now(),
+            format,
+            payload: frameBytes,
+          }),
+        );
+      }
+    });
+  } catch (error) {
+    // The sink loaded fine above but capture setup failed — without this, the sink (and its
+    // default-output takeover) leaks until the next server restart, confirmed in real-world
+    // testing as a stale sink surviving a failed activation.
+    await speakerSink.stop();
+    throw error;
+  }
 
   return async () => {
     await source.stop();
+    await speakerSink.stop();
     session.sendControl({ type: 'stream_stop', streamId: PLAYBACK_STREAM_ID });
   };
 }
