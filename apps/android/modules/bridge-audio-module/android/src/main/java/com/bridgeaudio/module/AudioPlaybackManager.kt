@@ -65,9 +65,17 @@ class AudioPlaybackManager {
 
     val track = AudioTrack.Builder()
       .setAudioAttributes(
+        // USAGE_VOICE_COMMUNICATION, not USAGE_MEDIA: when the microphone direction is also
+        // active, BluetoothRouteManager puts the device in MODE_IN_COMMUNICATION (required for
+        // Bluetooth SCO mic access) — Android's OS-level audio pipeline treats that as an active
+        // call and applies echo-cancellation/gain processing across the whole session. A stream
+        // tagged as generic media gets treated as something competing with "the call" and gets
+        // ducked; tagging this stream as voice communication too tells Android it *is* the call
+        // audio, which avoids that ducking. This is a genuine architectural match too — this app
+        // relays call/voice audio, not generic media.
         AudioAttributes.Builder()
-          .setUsage(AudioAttributes.USAGE_MEDIA)
-          .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+          .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+          .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
           .build(),
       )
       .setAudioFormat(

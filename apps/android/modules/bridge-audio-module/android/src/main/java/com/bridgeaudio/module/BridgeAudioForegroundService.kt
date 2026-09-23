@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 
 /**
@@ -29,12 +30,38 @@ class BridgeAudioForegroundService : Service() {
     }
   }
 
+  private var wakeLock: PowerManager.WakeLock? = null
+
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onCreate() {
     super.onCreate()
     createNotificationChannel()
     startForeground(NOTIFICATION_ID, buildNotification())
+    acquireWakeLock()
+  }
+
+  override fun onDestroy() {
+    wakeLock?.let { if (it.isHeld) it.release() }
+    wakeLock = null
+    super.onDestroy()
+  }
+
+  /**
+   * The foreground service type (microphone/mediaPlayback) protects this
+   * process from being *killed* under memory pressure, but doesn't by
+   * itself guarantee the CPU stays responsive to background work once the
+   * screen has been off for a while under Doze — the realistic "phone in
+   * your pocket during a call" scenario. A partial wake lock (CPU on,
+   * screen/other hardware still free to sleep) is the standard fix for
+   * background audio apps stuttering after extended screen-off time.
+   */
+  private fun acquireWakeLock() {
+    val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+    wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "BridgeAudio::StreamingWakeLock").apply {
+      setReferenceCounted(false)
+      acquire(java.util.concurrent.TimeUnit.HOURS.toMillis(6))
+    }
   }
 
   private fun createNotificationChannel() {

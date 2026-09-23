@@ -36,7 +36,6 @@
     "react-native-screens": "^4.26.2",
     "react-native-svg": "^15.15.5",
     "react-native-tcp-socket": "^6.3.0",
-    "react-native-udp": "^4.1.7",
     "react-redux": "^9.3.0",
     "tailwindcss": "^3"
   },

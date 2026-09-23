@@ -1,32 +1,27 @@
-import dgram from 'react-native-udp';
+import { closeUdpSocket, onUdpMessage, openUdpSocket, sendUdp } from 'bridge-audio-module';
+import type { EventSubscription } from 'expo-modules-core';
 import type { UdpChannel } from '@bridge-audio/transport';
 
 /**
- * React Native has no `node:dgram`, so `@bridge-audio/transport`'s
- * NodeUdpChannel can't run here — this implements the same UdpChannel
- * interface for Android using react-native-udp, keeping session/protocol
- * untouched. Bound to an OS-assigned ephemeral port; the server learns this
- * socket's address from the "hello" datagram sent right after connecting
- * (see BridgeAudioSession.ts), the same way NAT/firewall hole-punching
- * works for any UDP peer that doesn't know its own public/local port ahead
- * of time.
+ * React Native has no `node:dgram`. This used to wrap react-native-udp, but
+ * that library base64-encodes every packet on the JS thread — real
+ * per-packet overhead that, combined with full-duplex audio (mic + playback
+ * both active roughly doubles total packet count), was the suspected cause
+ * of jitter/quality regressions in real-world testing. UDP now lives in our
+ * own native module instead (see bridge-audio-module), passing raw
+ * Uint8Array/ByteArray through Expo's JSI-backed bridge with no
+ * serialization step — same fix already applied to mic/playback audio data.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- react-native-udp's JSDoc-generated
-// .d.ts doesn't propagate EventEmitter's inherited on/once methods onto UdpSocket's type.
-type UdpSocketWithEvents = ReturnType<typeof dgram.createSocket> & {
-  once(event: string, listener: (...args: any[]) => void): void;
-  on(event: string, listener: (...args: any[]) => void): void;
-};
-
 export class RnUdpChannel implements UdpChannel {
-  private readonly socket = dgram.createSocket({ type: 'udp4' }) as UdpSocketWithEvents;
-  private ready: Promise<void>;
+  private readonly ready: Promise<void>;
+  private messageSubscription: EventSubscription | undefined;
+  private readonly messageListeners: ((data: Uint8Array, remoteHost: string, remotePort: number) => void)[] = [];
 
   constructor() {
-    this.ready = new Promise((resolve, reject) => {
-      this.socket.once('listening', () => resolve());
-      this.socket.once('error', reject);
-      this.socket.bind(0);
+    this.ready = openUdpSocket().then(() => {
+      this.messageSubscription = onUdpMessage((event) => {
+        for (const listener of this.messageListeners) listener(event.data, event.host, event.port);
+      });
     });
   }
 
@@ -35,16 +30,16 @@ export class RnUdpChannel implements UdpChannel {
   }
 
   send(host: string, port: number, data: Uint8Array): void {
-    this.socket.send(data, 0, data.byteLength, port, host);
+    sendUdp(host, port, data);
   }
 
   onMessage(listener: (data: Uint8Array, remoteHost: string, remotePort: number) => void): void {
-    this.socket.on('message', (msg: Uint8Array, rinfo: { address: string; port: number }) => {
-      listener(msg, rinfo.address, rinfo.port);
-    });
+    this.messageListeners.push(listener);
   }
 
   close(): void {
-    this.socket.close();
+    this.messageSubscription?.remove();
+    this.messageSubscription = undefined;
+    void closeUdpSocket();
   }
 }

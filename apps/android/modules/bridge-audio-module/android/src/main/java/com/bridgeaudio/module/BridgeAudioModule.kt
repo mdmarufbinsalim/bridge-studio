@@ -17,6 +17,7 @@ class BridgeAudioModule : Module() {
   private val bluetoothRoute by lazy { BluetoothRouteManager(appContext.reactContext!!) }
   private val captureManager = AudioCaptureManager()
   private val playbackManager = AudioPlaybackManager()
+  private val udpSocketManager = UdpSocketManager()
 
   private var capturing = false
   private var playing = false
@@ -24,7 +25,21 @@ class BridgeAudioModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("BridgeAudioModule")
 
-    Events("onMicrophoneChunk")
+    Events("onMicrophoneChunk", "onUdpMessage")
+
+    AsyncFunction("openUdpSocket") {
+      udpSocketManager.open { data, host, port ->
+        sendEvent("onUdpMessage", mapOf("data" to data, "host" to host, "port" to port))
+      }
+    }
+
+    Function("sendUdp") { host: String, port: Int, data: ByteArray ->
+      udpSocketManager.send(host, port, data)
+    }
+
+    AsyncFunction("closeUdpSocket") {
+      udpSocketManager.close()
+    }
 
     AsyncFunction("startMicrophoneCapture") { sampleRate: Int, channels: Int, bitsPerSample: Int ->
       if (capturing) return@AsyncFunction
@@ -68,6 +83,7 @@ class BridgeAudioModule : Module() {
       if (capturing) captureManager.stop()
       if (playing) playbackManager.stop()
       bluetoothRoute.stopBluetoothSco()
+      udpSocketManager.close()
     }
   }
 
