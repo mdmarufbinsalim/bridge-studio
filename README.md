@@ -20,9 +20,9 @@ Installs a `bridgeaudio` command. Requires Node.js 18+ (installed separately)
 and PipeWire, which the installer will try to install for you if missing.
 
 **Android:** download the latest APK —
-[releases/bridge-audio.apk](releases/bridge-audio.apk) — and install it
-(you'll need to allow installs from your browser/file manager the first
-time). A Play Store listing isn't available yet.
+[bridge-audio.apk](https://github.com/mdmarufbinsalim/bridge-studio/releases/download/android-latest/bridge-audio.apk)
+— and install it (you'll need to allow installs from your browser/file
+manager the first time). A Play Store listing isn't available yet.
 
 ## Use it
 
@@ -83,6 +83,7 @@ pnpm --filter desktop start:dev   # run the server without installing the CLI
 pnpm release:android
 ```
 
-Builds a release APK and stages it at `releases/bridge-audio.apk` (a fixed
-filename, so the download link above always points at the latest build).
-Review and commit it yourself when ready.
+Builds a release APK and publishes it as the `android-latest` GitHub
+Release asset (a fixed tag/filename, overwritten in place, so the download
+link above never changes) — it's too large for a normal git commit
+(GitHub's 100MB file limit; this APK bundles all four Android ABIs).
