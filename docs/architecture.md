@@ -6,60 +6,56 @@ local network.
 
 ## Data flow
 
-**Playback:** Linux app → PipeWire → `platform/linux` → `audio-core` →
-`protocol` → TCP (`transport`) → Android → Kotlin native module → Bluetooth
-earbuds.
+**Playback:** Linux app → PipeWire → `platform/linux` (capture from a
+dedicated virtual sink) → `audio-core` (chunking) → `protocol` (framing) →
+UDP (`transport`) → Android → Kotlin native module → `AudioTrack` →
+Bluetooth earbuds. A jitter buffer with loss concealment smooths out network
+jitter and drops on the receiving end.
 
-**Microphone:** Bluetooth earbuds → Android Bluetooth input → Kotlin native
-module → `audio-core`/`protocol` → TCP → desktop server → `platform/linux` →
-virtual microphone → Linux app.
+**Microphone:** Bluetooth earbuds → Android `AudioRecord` → Kotlin native
+module → `audio-core`/`protocol` → UDP → desktop server → `platform/linux`
+(virtual microphone sink) → Linux app.
 
-Playback and microphone are independent logical streams (distinguished by
-`StreamKind`), each with its own buffering, enable/disable state, and error
-handling, so either direction can run, fail, or be toggled without affecting
-the other.
+TCP carries the handshake and control messages; once a session is active,
+audio frames switch to UDP so a single lost packet is just a dropped frame
+instead of head-of-line-blocking everything behind it. Playback and
+microphone are independent logical streams (`StreamKind`), each with its own
+lifecycle, so either direction can run, fail, or be toggled without
+affecting the other.
 
 ## Package boundaries
 
 - `audio-core` — `AudioFormat`, `AudioFrame`, bounded buffers (`RingBuffer`,
-  `JitterBuffer`), and the `AudioSource`/`AudioSink` interfaces platform
-  implementations fulfill. No transport, protocol, or platform knowledge.
+  `JitterBuffer`), `PcmChunker`, and the `AudioSource`/`AudioSink` interfaces
+  platform implementations fulfill. No transport, protocol, or platform
+  knowledge.
 - `protocol` — wire format: protocol version, handshake, control messages,
-  binary `AudioFrame` encode/decode, and stream framing over an arbitrary
-  byte stream. Depends only on `audio-core`. Knows nothing about TCP.
+  binary `AudioFrame` encode/decode. Depends only on `audio-core`.
 - `transport` — the generic `Transport`/`TransportConnector`/
-  `TransportListener` interfaces plus the v1 TCP implementation. Knows
+  `TransportListener` interfaces plus TCP and UDP implementations. Knows
   nothing about audio or the BridgeAudio protocol.
 - `session` — client/server session lifecycle (handshake, state machine,
-  reconnection with backoff) and per-direction (`DirectionalStream`)
-  buffering. Composes `protocol` + `transport`.
-- `platform/linux` — PipeWire capture and virtual-microphone sink. All
-  PipeWire-specific types stay inside this package; it only exposes
-  `audio-core`'s `AudioSource`/`AudioSink` interfaces outward. This isolation
-  is what lets future Windows/macOS platform packages slot in without
-  touching `audio-core`, `protocol`, `transport`, or `session`.
-- `apps/desktop` — plain Node.js server composing `session` + `transport` +
-  (eventually) `platform/linux`.
+  reconnection with backoff), switching audio onto UDP once a peer address is
+  known. Composes `protocol` + `transport`.
+- `platform/linux` — all PipeWire-specific code (via `pactl`/`pw-cat`):
+  a dedicated, always-present virtual speaker sink for capture (rather than
+  chasing PipeWire's "default sink", which is unreliable without persistent
+  real hardware) and a virtual microphone sink other apps can select as
+  input. Only exposes `audio-core`'s `AudioSource`/`AudioSink` interfaces
+  outward, so future Windows/macOS platform packages can slot in without
+  touching anything above this layer.
+- `apps/desktop` — the Node.js server and the `bridgeaudio` CLI (start/stop/
+  status via a pidfile), composing `session` + `transport` + `platform/linux`.
 - `apps/android` — Expo/React Native UI, Redux Toolkit connection state, and
-  a Kotlin native module (Expo Modules API) for Bluetooth-routed microphone
-  capture and PCM playback.
+  a Kotlin native module (Expo Modules API) for Bluetooth-routed audio
+  capture/playback and a raw UDP socket (no base64 overhead on the JS
+  thread).
 
-## Why TCP first, and why the abstraction
+## Why UDP for audio, TCP for everything else
 
-V1 uses TCP because it's simple to get correct (ordered, reliable) while the
-rest of the architecture is proven out. `transport` is a generic interface
-specifically so a future UDP (or other) transport can be added without
-touching `protocol`, `session`, or any platform code — but UDP is
-out of scope until TCP latency has been measured.
-
-## Current status
-
-Implemented: monorepo skeleton, `audio-core`, `protocol` (framing + codec),
-`transport` (interface + TCP), `session` (handshake, framing routing,
-reconnection), a minimal desktop server, and a Node test client that proves
-the TCP handshake + audio-frame exchange end-to-end.
-
-Not yet implemented (later phases per the roadmap): PipeWire capture/sink,
-the Android Kotlin native module, and the Android TCP transport
-(`RnTcpConnector`) — these currently throw "not implemented yet" so the
-package boundaries exist without pretending the platform code works.
+TCP's head-of-line blocking meant one lost segment stalled every audio frame
+behind it, audible as stutter. UDP has no such ordering guarantee, so a lost
+packet is just a dropped frame — the jitter buffer conceals it with a
+gain-ramped repeat instead of waiting. TCP stays for the handshake/control
+channel, where ordering and delivery guarantees matter and the data volume
+is tiny.

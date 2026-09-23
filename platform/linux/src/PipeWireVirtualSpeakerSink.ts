@@ -21,28 +21,16 @@ export interface PipeWireVirtualSpeakerSinkOptions {
   loopbackToHardware?: boolean;
 }
 
-// No space: confirmed pactl's module-arg parser doesn't honor quoting or backslash-escaping for
-// this property, so a spaced value silently truncates at the first word — both our sinks showed
-// up as the identical bare "BridgeAudio" in GNOME Settings, impossible to tell apart.
+// No space — pactl's module-arg parser truncates values at the first space.
 const DEFAULT_DESCRIPTION = 'BridgeAudio-Speaker';
 
-/**
- * Higher than real hardware sinks typically carry (usually ~1000-2009) so the session manager's
- * own default-sink ranking picks this sink on its own, including on its own later recomputes —
- * see loadNullSink's priority docs for why just calling set-default-sink once isn't durable.
- */
+/** Higher than typical hardware sinks (~1000-2009) so the session manager picks this by default. */
 const SINK_PRIORITY = 2500;
 
 /**
- * Loads a dedicated null-sink for the playback direction: apps output here
- * (directly, or via makeDefault making it the system default), and
- * PipeWireAudioSource captures its `.monitor` and forwards it to the phone.
- *
- * A fixed, always-present sink rather than capturing whatever PipeWire's
- * "default sink" happens to be — see pactlHelpers.OWN_SPEAKER_SINK_NAME for
- * why that was unreliable in practice. This class only owns the sink's
- * lifecycle (load/set-default/unload); PipeWireAudioSource still does the
- * actual `pw-cat --record` capture against its monitor.
+ * Loads a dedicated, always-present null-sink for the playback direction: apps output here, and
+ * PipeWireAudioSource captures its monitor and forwards it to the phone. This class only owns the
+ * sink's lifecycle; PipeWireAudioSource does the actual capture.
  */
 export class PipeWireVirtualSpeakerSink {
   private nullSinkModuleId: number | undefined;
@@ -64,15 +52,7 @@ export class PipeWireVirtualSpeakerSink {
     return this.sinkName;
   }
 
-  /**
-   * What PipeWireAudioSource should pass as --target to capture this sink's monitor. A null-sink's
-   * monitor isn't a separately-named PipeWire node the way the "<name>.monitor" naming convention
-   * (borrowed from PulseAudio's source list) implies — it's monitor ports on the *same* node.
-   * Confirmed via `pw-link -l`: targeting "<name>.monitor" with pw-cat resolves to nothing and the
-   * record stream links to no ports at all (silently producing zeros, not an error) — targeting
-   * the bare sink name for a Capture-category stream is what PipeWire actually resolves to the
-   * sink's monitor_FL/monitor_FR ports.
-   */
+  /** A null-sink's monitor ports live on this same node, not a separately-named "<name>.monitor" node. */
   get monitorName(): string {
     return this.sinkName;
   }
@@ -91,8 +71,8 @@ export class PipeWireVirtualSpeakerSink {
     }
 
     if (this.loopbackToHardware) {
-      // Never our own mic sink — looping our own microphone-direction audio back into the
-      // speaker-direction sink would be a direct feedback path (hearing your own voice).
+      // Excludes our own mic sink too — looping mic audio back into the speaker sink would be a
+      // direct feedback path (hearing your own voice).
       const realSink = await findRealOutputSink([this.sinkName, OWN_VIRTUAL_SINK_NAME]).catch(() => undefined);
       if (realSink) {
         this.loopbackModuleId = await loadLoopback(`${this.sinkName}.monitor`, realSink).catch((error: unknown) => {
@@ -100,7 +80,7 @@ export class PipeWireVirtualSpeakerSink {
           return undefined;
         });
       } else {
-        console.warn('[platform-linux] no real output device found — skipping local loopback (phone forwarding is unaffected)');
+        console.warn('[platform-linux] no real output device found — skipping local loopback');
       }
     }
   }

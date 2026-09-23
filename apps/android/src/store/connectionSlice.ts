@@ -16,7 +16,7 @@ const initialState: ConnectionState = {
   port: 7711,
   status: 'disconnected',
   playbackEnabled: true,
-  microphoneEnabled: true,
+  microphoneEnabled: false,
 };
 
 const connectionSlice = createSlice({

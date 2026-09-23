@@ -9,30 +9,16 @@ export interface PipeWireVirtualMicSinkOptions {
   description?: string;
 }
 
-// No space — see PipeWireVirtualSpeakerSink's DEFAULT_DESCRIPTION for why.
+// No space — pactl's module-arg parser truncates values at the first space.
 const DEFAULT_DESCRIPTION = 'BridgeAudio-Microphone';
 
-/**
- * Deliberately low — this sink exists only to carry the phone's mic audio into a source other
- * apps can select as their microphone; it should never win the session manager's default-*output*
- * sink ranking. See PipeWireVirtualSpeakerSink's SINK_PRIORITY and loadNullSink's priority docs:
- * confirmed in real-world testing that without an explicit low priority here, this sink (being
- * created after the speaker sink) kept winning that ranking on its own recomputes — silently
- * mixing real app audio into the same sink as the phone's live mic input.
- */
+/** Deliberately low — this sink must never win the session manager's default-output ranking. */
 const SINK_PRIORITY = 0;
 
 /**
- * Publishes received PCM as a PipeWire virtual microphone: loads a
- * null-sink via `pactl`, then streams written chunks into it via
- * `pw-cat --playback`. The sink's `.monitor` source carries the audio, but
- * simplified device pickers (GNOME Settings, and — per real-world testing
- * with a Meet call — Chrome's own microphone list) filter out monitor-class
- * sources entirely, so it never shows up as a selectable microphone there.
- * A module-remap-source wraps that monitor into a proper, non-monitor
- * source (see loadRemapSource) that other apps actually select as their
- * microphone. PipeWire/Pulse specifics stay isolated here — see
- * PipeWireAudioSource for the boundary rationale.
+ * Publishes received PCM as a PipeWire virtual microphone: loads a null-sink, streams written
+ * chunks into it via `pw-cat --playback`, and wraps its monitor with module-remap-source so it
+ * shows up as a normal, selectable microphone (device pickers filter out raw monitor sources).
  */
 export class PipeWireVirtualMicSink implements AudioSink {
   private nullSinkModuleId: number | undefined;
@@ -89,12 +75,9 @@ export class PipeWireVirtualMicSink implements AudioSink {
     child.on('error', (error) => {
       console.error('[platform-linux] pw-cat playback process error:', error);
     });
-    // Without this, a write() landing in the exact window where the child has already exited
-    // (e.g. during shutdown, racing kill('SIGTERM') against an in-flight audio frame) throws
-    // EPIPE as an unhandled 'error' event on this stream — fatal in Node, confirmed in real-world
-    // testing as a crash mid-shutdown that aborted cleanup and left the virtual sinks leaked. The
-    // `writable` check in write() below is the primary guard; this is the safety net for the race
-    // where that check is still stale.
+    // Without this, a write() racing the child's exit (e.g. during shutdown) throws EPIPE as an
+    // unhandled 'error' event — fatal in Node. The `writable` check in write() is the primary
+    // guard; this is the safety net for when that check is stale.
     child.stdin.on('error', (error) => {
       console.error('[platform-linux] pw-cat playback stdin error:', error);
     });

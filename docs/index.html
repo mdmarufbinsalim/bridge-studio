@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BridgeAudio — earbuds for your Linux desktop</title>
+<meta name="description" content="Use your phone's Bluetooth earbuds as your Linux desktop's speakers and microphone, over your local network. Open source, no cloud." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --paper: #f5f6f4;
+    --ink: #0d1512;
+    --signal: #0e7a5b;
+    --signal-bright: #16a278;
+    --line: #dadeda;
+    --muted: #5c6d66;
+    --terminal-bg: #0b0f0d;
+    --terminal-text: #e8ece9;
+    --terminal-line: #232b27;
+    --radius: 10px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0b0f0d;
+      --ink: #edf1ee;
+      --signal: #34d399;
+      --signal-bright: #34d399;
+      --line: #202822;
+      --muted: #8b9a92;
+      --terminal-bg: #050807;
+      --terminal-text: #e8ece9;
+      --terminal-line: #1a221d;
+      color-scheme: dark;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { font-family: 'Space Grotesk', system-ui, sans-serif; font-weight: 600; line-height: 1.15; margin: 0; }
+  code, pre, .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+  a { color: var(--signal); }
+  p { max-width: 62ch; color: var(--muted); }
+
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+
+  header.site {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 24px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .wordmark { display: flex; align-items: center; gap: 10px; font-family: 'Space Grotesk'; font-weight: 600; font-size: 18px; }
+  .wordmark .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--signal-bright); flex: none; }
+  nav.site a { color: var(--ink); text-decoration: none; font-size: 14px; margin-left: 24px; }
+  nav.site a:hover { color: var(--signal); }
+
+  section { padding: 72px 0; border-bottom: 1px solid var(--line); }
+  section:last-of-type { border-bottom: none; }
+
+  .hero h1 { font-size: clamp(32px, 5vw, 48px); max-width: 14ch; letter-spacing: -0.01em; }
+  .hero p.lead { font-size: 18px; margin-top: 18px; max-width: 46ch; }
+
+  /* --- signal flow diagram --- */
+  .flow { margin: 48px 0; }
+  .flow svg { width: 100%; height: auto; display: block; }
+  .flow-caption { display: flex; justify-content: space-between; margin-top: 10px; font-size: 13px; color: var(--muted); }
+
+  .pulse { animation: travel 2.6s linear infinite; }
+  @keyframes travel {
+    0%   { offset-distance: 0%; opacity: 0; }
+    8%   { opacity: 1; }
+    92%  { opacity: 1; }
+    100% { offset-distance: 100%; opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pulse { animation: none; opacity: .9; offset-distance: 50%; }
+  }
+
+  /* --- terminal block --- */
+  .terminal {
+    background: var(--terminal-bg);
+    color: var(--terminal-text);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    max-width: 640px;
+  }
+  .terminal .cmd { font-size: 14px; overflow-x: auto; white-space: nowrap; min-width: 0; }
+  .terminal .cmd .muted-tok { color: #6d7c75; }
+  .copy-btn {
+    flex: none;
+    background: transparent;
+    border: 1px solid var(--terminal-line);
+    color: var(--terminal-text);
+    font-family: 'IBM Plex Mono';
+    font-size: 12px;
+    padding: 7px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .copy-btn:hover { border-color: var(--signal-bright); color: var(--signal-bright); }
+  .copy-btn:focus-visible, a:focus-visible, .btn:focus-visible { outline: 2px solid var(--signal-bright); outline-offset: 2px; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--ink);
+    color: var(--paper);
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    border: 1px solid var(--ink);
+  }
+  .btn.ghost { background: transparent; color: var(--ink); }
+  .btn:hover { opacity: .85; }
+
+  /* --- steps --- */
+  .steps { display: grid; gap: 28px; margin-top: 32px; }
+  .step { display: grid; grid-template-columns: 40px 1fr; gap: 18px; align-items: start; }
+  .step .num { font-family: 'Space Grotesk'; font-size: 14px; color: var(--muted); padding-top: 2px; }
+  .step h3 { font-size: 17px; margin-bottom: 6px; }
+  .step p { font-size: 14.5px; margin: 0; }
+
+  /* --- features --- */
+  .features { display: grid; gap: 0; margin-top: 32px; border-top: 1px solid var(--line); }
+  .feature { display: grid; grid-template-columns: 1fr 2fr; gap: 24px; padding: 22px 0; border-bottom: 1px solid var(--line); }
+  .feature h3 { font-size: 16px; border-left: 2px solid var(--signal-bright); padding-left: 14px; }
+  .feature p { font-size: 14.5px; margin: 0; }
+  @media (max-width: 640px) {
+    .feature { grid-template-columns: 1fr; gap: 8px; }
+  }
+
+  .download-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 32px; }
+  .download-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; }
+  .download-card h3 { font-size: 15px; margin-bottom: 6px; }
+  .download-card p { font-size: 13.5px; margin: 0 0 16px; }
+  @media (max-width: 640px) { .download-grid { grid-template-columns: 1fr; } }
+
+  footer.site { padding: 40px 0 60px; }
+  footer.site .row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; align-items: center; }
+  footer.site p { font-size: 13px; margin: 0; }
+  footer.site a { color: var(--muted); text-decoration: none; font-size: 13px; margin-right: 20px; }
+  footer.site a:hover { color: var(--signal); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="site">
+    <div class="wordmark"><span class="dot"></span>BridgeAudio</div>
+    <nav class="site">
+      <a href="#how">How it works</a>
+      <a href="#download">Download</a>
+      <a href="https://github.com/mdmarufbinsalim/bridge-studio">GitHub</a>
+    </nav>
+  </header>
+</div>
+
+<div class="wrap">
+  <section class="hero">
+    <h1>Your earbuds. Your Linux desktop. One network away.</h1>
+    <p class="lead">
+      BridgeAudio turns your phone into a wireless bridge: desktop audio flows out to your
+      Bluetooth earbuds, and your earbuds' mic flows back in as a Linux microphone. No cables,
+      no cloud, no account.
+    </p>
+
+    <div class="flow" aria-hidden="true">
+      <svg viewBox="0 0 720 140" xmlns="http://www.w3.org/2000/svg">
+        <path id="wire" d="M 60 70 L 660 70" stroke="var(--line)" stroke-width="2" stroke-dasharray="1 8" stroke-linecap="round" fill="none"/>
+
+        <g>
+          <rect x="20" y="40" width="60" height="60" rx="8" fill="none" stroke="var(--ink)" stroke-width="2"/>
+          <path d="M35 62 h30 M35 70 h30 M35 78 h18" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"/>
+        </g>
+
+        <g transform="translate(330,40)">
+          <rect x="0" y="0" width="34" height="60" rx="7" fill="none" stroke="var(--ink)" stroke-width="2"/>
+          <circle cx="17" cy="49" r="3" fill="var(--ink)"/>
+        </g>
+
+        <g transform="translate(630,40)">
+          <path d="M15 8 a15 15 0 1 1 -0.1 0" fill="none" stroke="var(--ink)" stroke-width="2"/>
+          <path d="M8 22 q7 18 0 34" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"/>
+        </g>
+
+        <circle cx="360" cy="70" r="4.5" fill="var(--signal-bright)" class="pulse" style="offset-path: path('M 60 70 L 660 70');"/>
+      </svg>
+      <div class="flow-caption">
+        <span>Desktop</span><span>Network</span><span>Earbuds</span>
+      </div>
+    </div>
+
+    <div class="terminal">
+      <div class="cmd" id="install-cmd"><span class="muted-tok">$</span> curl -fsSL https://raw.githubusercontent.com/mdmarufbinsalim/bridge-studio/main/install.sh <span class="muted-tok">|</span> bash</div>
+      <button class="copy-btn" id="copy-btn" type="button">Copy</button>
+    </div>
+  </section>
+</div>
+
+<div class="wrap">
+  <section id="how">
+    <h2 style="font-size: 26px;">How it works</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="num">01</div>
+        <div><h3>Install on your PC</h3><p>One command sets up PipeWire routing and a <code>bridgeaudio</code> CLI. No manual audio configuration.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">02</div>
+        <div><h3>Run it</h3><p><code>bridgeaudio</code> starts listening on your local network and prints a QR code.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">03</div>
+        <div><h3>Scan it from your phone</h3><p>Open the app, scan the code, and your desktop audio starts playing through whatever your phone is connected to.</p></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="wrap">
+  <section id="features">
+    <h2 style="font-size: 26px;">Built for how it's actually used</h2>
+    <div class="features">
+      <div class="feature">
+        <h3>Real audio device, not a hack</h3>
+        <p>Creates an actual PipeWire virtual sink your desktop plays to — works with any app, not just ones BridgeAudio knows about.</p>
+      </div>
+      <div class="feature">
+        <h3>Built for jittery Wi-Fi</h3>
+        <p>Audio travels over UDP with a jitter buffer and loss concealment, so one dropped packet is a fraction of a frame, not a stutter.</p>
+      </div>
+      <div class="feature">
+        <h3>Stays local</h3>
+        <p>Desktop and phone talk directly over your LAN. No account, no cloud relay, no data leaving your network.</p>
+      </div>
+      <div class="feature">
+        <h3>Stop it without hunting for the process</h3>
+        <p><code>bridgeaudio stop</code> finds and cleanly shuts down a running instance from any terminal.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="wrap">
+  <section id="download">
+    <h2 style="font-size: 26px;">Download</h2>
+    <div class="download-grid">
+      <div class="download-card">
+        <h3>Desktop (Linux)</h3>
+        <p>Requires Node.js 18+. PipeWire is installed for you if missing.</p>
+        <a class="btn" href="https://raw.githubusercontent.com/mdmarufbinsalim/bridge-studio/main/install.sh">View install.sh</a>
+      </div>
+      <div class="download-card">
+        <h3>Android</h3>
+        <p>Direct APK — no Play Store listing yet. You'll need to allow installs from your browser.</p>
+        <a class="btn ghost" style="border-color: var(--line);" href="https://github.com/mdmarufbinsalim/bridge-studio/raw/main/releases/bridge-audio.apk">Download APK</a>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="wrap">
+  <footer class="site">
+    <div class="row">
+      <p>BridgeAudio is open source, MIT licensed.</p>
+      <div>
+        <a href="https://github.com/mdmarufbinsalim/bridge-studio">GitHub</a>
+        <a href="https://github.com/mdmarufbinsalim/bridge-studio/blob/main/docs/architecture.md">Architecture</a>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<script>
+  var btn = document.getElementById('copy-btn');
+  var cmd = 'curl -fsSL https://raw.githubusercontent.com/mdmarufbinsalim/bridge-studio/main/install.sh | bash';
+  btn.addEventListener('click', function () {
+    navigator.clipboard.writeText(cmd).then(function () {
+      var original = btn.textContent;
+      btn.textContent = 'Copied';
+      setTimeout(function () { btn.textContent = original; }, 1500);
+    });
+  });
+</script>
+
+</body>
+</html>

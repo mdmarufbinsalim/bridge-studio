@@ -6,12 +6,7 @@ import { log } from './log.js';
 import { pwCatSampleFormat } from './pwCatFormat.js';
 
 const HEALTH_CHECK_INTERVAL_MS = 3000;
-/**
- * A fixed, unique node name for our own capture stream, so it can be targeted precisely by
- * linkPorts rather than by pw-cat's generic default "pw-cat" name (ambiguous — the microphone
- * direction spawns its own pw-cat process too, and manual/diagnostic pw-cat invocations are common
- * on this kind of system).
- */
+/** Unique so linkPorts can target this exact stream — pw-cat's default "pw-cat" name is ambiguous. */
 const CAPTURE_NODE_NAME = 'bridgeaudio-desktop-capture';
 const CHANNEL_PORT_SUFFIXES = ['FL', 'FR'] as const;
 
@@ -28,18 +23,9 @@ const RETRY_DELAY_MS = 300;
 const STARTUP_GRACE_MS = 500;
 
 /**
- * Captures desktop playback audio via `pw-cat --record`, targeting a fixed,
- * caller-owned sink's monitor (normally PipeWireVirtualSpeakerSink's own
- * sink — see its docs for why a fixed sink is used instead of chasing
- * PipeWire's "default sink"). All PipeWire-specific concepts (targets,
- * monitors, the `pw-cat` CLI itself) are confined to this file —
- * audio-core/protocol/transport/session only ever see the platform-agnostic
- * AudioSource interface.
- *
- * pw-cat can also just die mid-session (the target sink getting torn down
- * and recreated, a transient PipeWire hiccup) — a periodic health check
- * restarts it if that happens, rather than leaving capture silently dead
- * until a full app reconnect.
+ * Captures desktop playback audio via `pw-cat --record` from a fixed, caller-owned sink's monitor.
+ * A periodic health check restarts pw-cat if it dies mid-session, so capture doesn't stay silently
+ * dead until a full app reconnect.
  */
 export class PipeWireAudioSource implements AudioSource {
   private process: ChildProcessByStdio<null, Readable, Readable> | undefined;
@@ -114,12 +100,8 @@ export class PipeWireAudioSource implements AudioSource {
       String(this.format.channels),
       '--format',
       pwCatSampleFormat(this.format),
-      // "0" means don't auto-link at all — confirmed in real-world testing that relying on
-      // --target <sink-name> + --media-category Capture to auto-link to that sink's monitor is
-      // unreliable: observed it link to a completely different node (our own microphone-direction
-      // remap-source, of all things) instead of the sink we explicitly named. Every link this
-      // process ends up with now comes from our own explicit linkPorts calls below, which is
-      // unambiguous by construction.
+      // "0" = don't auto-link (unreliable — observed linking to the wrong node entirely).
+      // Every link comes from our own explicit linkPorts calls below instead.
       '--target',
       '0',
       '--media-category',

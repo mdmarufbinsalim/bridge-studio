@@ -1,33 +1,70 @@
 # BridgeAudio
 
-An open-source Linux ↔ Android audio bridge: use Bluetooth earbuds paired to
-your phone as your Linux desktop's speakers and microphone, over the local
-network.
+Use Bluetooth earbuds paired to your phone as your Linux desktop's speakers
+and microphone, over your local network — no cables, no re-pairing.
 
-- **Playback:** Linux desktop audio → PC server → LAN → Android → Bluetooth earbuds
-- **Microphone:** Bluetooth earbuds → Android → LAN → PC server → Linux microphone
+- **Playback:** Linux desktop audio → PC → Wi-Fi → phone → Bluetooth earbuds
+- **Microphone:** Bluetooth earbuds → phone → Wi-Fi → PC → Linux microphone
 
-V1 targets Linux + Android over TCP/LAN. The architecture (`audio-core`,
-`protocol`, `transport`, `session`) is platform- and transport-agnostic so
-Windows/macOS/iOS and other transports can be added later without rewrites.
-See [docs/architecture.md](docs/architecture.md) for the full design and
-current implementation status.
+*(Screenshots coming soon.)*
+
+## Install
+
+**Desktop (Linux):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mdmarufbinsalim/bridge-studio/main/install.sh | bash
+```
+
+Installs a `bridgeaudio` command. Requires Node.js 18+ (installed separately)
+and PipeWire, which the installer will try to install for you if missing.
+
+**Android:** download the latest APK —
+[releases/bridge-audio.apk](releases/bridge-audio.apk) — and install it
+(you'll need to allow installs from your browser/file manager the first
+time). A Play Store listing isn't available yet.
+
+## Use it
+
+```bash
+bridgeaudio
+```
+
+This prints a QR code and starts listening on your local network. Open the
+BridgeAudio app on your phone, scan the code (or enter the IP/port shown
+manually), and audio starts flowing.
+
+```bash
+bridgeaudio stop      # stop it, from any terminal
+bridgeaudio status    # check whether it's running
+bridgeaudio --verbose # start with full debug logging
+```
+
+## How it works
+
+The desktop side creates a virtual PipeWire audio device; whatever your
+Linux system plays gets captured, framed, and sent over the network (UDP,
+with a jitter buffer and loss concealment on the receiving end) to the phone,
+which plays it through whatever output it's currently routed to — your
+earbuds, if connected. See [docs/architecture.md](docs/architecture.md) for
+the full package layout and data flow.
 
 ## Monorepo layout
 
 ```
 apps/
-  desktop/      Node.js server (Linux)
+  desktop/      Node.js server + bridgeaudio CLI (Linux)
   android/      Expo/React Native app + Kotlin native module
 packages/
-  audio-core/   AudioFormat, AudioFrame, bounded buffers, stream interfaces
+  audio-core/   AudioFormat, AudioFrame, jitter buffer, stream interfaces
   protocol/     wire format: handshake, control messages, frame codec
-  transport/    generic Transport interface + TCP implementation
+  transport/    generic Transport interface + TCP/UDP implementations
   session/      session lifecycle, reconnection, per-direction streams
 platform/
-  linux/        PipeWire capture + virtual microphone (isolated here)
+  linux/        PipeWire capture + virtual mic/speaker sinks
 docs/
-tests/
+scripts/        release-android.sh (pnpm release:android)
+install.sh      Linux installer/updater for the desktop CLI
 ```
 
 ## Development
@@ -37,16 +74,15 @@ Requires pnpm (`packageManager` pins `pnpm@9.15.0`).
 ```bash
 pnpm install
 pnpm build
+pnpm --filter desktop start:dev   # run the server without installing the CLI
 ```
 
-Try the current milestone — a desktop server and a test client that
-establish a session over TCP and exchange framed audio data:
+## Releasing the Android app
 
 ```bash
-pnpm --filter desktop start:dev      # terminal 1
-pnpm --filter desktop test-client    # terminal 2
+pnpm release:android
 ```
 
-The Android app (`pnpm --filter android start`) currently ships UI and state
-only; its native audio path and TCP transport land in a later phase (see
-docs/architecture.md).
+Builds a release APK and stages it at `releases/bridge-audio.apk` (a fixed
+filename, so the download link above always points at the latest build).
+Review and commit it yourself when ready.

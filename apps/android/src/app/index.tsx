@@ -1,19 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { router, useLocalSearchParams } from 'expo-router';
-import { LogOut, Mic, QrCode, Volume2, Wifi, WifiOff } from 'lucide-react-native';
+import { LogOut, Pause, Play, QrCode, Wifi, WifiOff } from 'lucide-react-native';
 import type { RootState } from '../store/index';
-import {
-  setAddress,
-  setError,
-  setMicrophoneEnabled,
-  setPlaybackEnabled,
-  setStatus,
-} from '../store/connectionSlice';
+import { setAddress, setError, setPlaybackEnabled, setStatus } from '../store/connectionSlice';
 import { connectToServer, type BridgeAudioConnection } from '../native/BridgeAudioSession';
 import { AudioVisualizer } from '../components/AudioVisualizer';
 import { PulsingDot } from '../components/PulsingDot';
+import { ThemeToggle } from '../components/ThemeToggle';
 
 const LEVEL_POLL_INTERVAL_MS = 150;
 
@@ -32,9 +27,14 @@ export default function StatusScreen() {
       connectionRef.current = bridgeConnection;
       dispatch(setStatus('connected'));
 
+      bridgeConnection.onConnectionLost(() => {
+        connectionRef.current = undefined;
+        setLevels({ playback: 0, mic: 0 });
+        dispatch(setStatus('disconnected'));
+      });
+
       const bridge = bridgeConnection.getAudioBridge();
       if (connection.playbackEnabled) await bridge?.enablePlayback();
-      if (connection.microphoneEnabled) await bridge?.enableMicrophone();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       dispatch(setError(message));
@@ -66,18 +66,12 @@ export default function StatusScreen() {
     return () => clearInterval(interval);
   }, [connection.status]);
 
-  const onTogglePlayback = async (value: boolean): Promise<void> => {
+  const onTogglePlayback = async (): Promise<void> => {
+    const value = !connection.playbackEnabled;
     dispatch(setPlaybackEnabled(value));
     const bridge = connectionRef.current?.getAudioBridge();
     if (value) await bridge?.enablePlayback();
     else await bridge?.disablePlayback();
-  };
-
-  const onToggleMicrophone = async (value: boolean): Promise<void> => {
-    dispatch(setMicrophoneEnabled(value));
-    const bridge = connectionRef.current?.getAudioBridge();
-    if (value) await bridge?.enableMicrophone();
-    else await bridge?.disableMicrophone();
   };
 
   return (
@@ -93,33 +87,36 @@ export default function StatusScreen() {
           </View>
         </View>
 
-        {connection.status === 'connected' ? (
-          <Pressable
-            className="h-10 w-10 items-center justify-center rounded-full border border-offline/40"
-            onPress={() => void onDisconnect()}
-          >
-            <LogOut size={18} color="#FF453A" />
-          </Pressable>
-        ) : null}
+        <View className="flex-row items-center gap-2">
+          <ThemeToggle />
+          {connection.status === 'connected' ? (
+            <Pressable
+              className="h-10 w-10 items-center justify-center rounded-full border border-offline/40"
+              onPress={() => void onDisconnect()}
+            >
+              <LogOut size={18} color="#FF453A" />
+            </Pressable>
+          ) : null}
+        </View>
       </View>
 
       {connection.status === 'disconnected' || connection.status === 'error' ? (
-        <View className="mt-6 flex-1 items-center justify-center gap-7 pb-28">
+        <View className="mt-6 flex-1 items-center justify-center gap-8 pb-28">
           {connection.status === 'error' ? (
-            <View className="items-center gap-3">
-              <View className="h-20 w-20 items-center justify-center rounded-full bg-surface">
-                <WifiOff size={34} color="#FF453A" />
+            <View className="items-center gap-4">
+              <View className="h-24 w-24 items-center justify-center rounded-full bg-surface">
+                <WifiOff size={38} color="#FF453A" />
               </View>
               <Text className="text-center text-offline">
                 {connection.errorMessage ?? 'Could not connect to the server'}
               </Text>
             </View>
           ) : (
-            <View className="items-center gap-3">
-              <View className="h-24 w-24 items-center justify-center rounded-full bg-surface">
-                <QrCode size={40} color="#34D399" />
+            <View className="items-center gap-4">
+              <View className="h-28 w-28 items-center justify-center rounded-full bg-surface">
+                <QrCode size={46} color="#34D399" />
               </View>
-              <Text className="max-w-[260px] text-center text-muted">
+              <Text className="max-w-[280px] text-center text-muted">
                 Open BridgeAudio on your PC and scan the QR code it shows to connect
               </Text>
             </View>
@@ -142,51 +139,35 @@ export default function StatusScreen() {
       ) : null}
 
       {connection.status === 'connected' ? (
-        <View className="mt-6 flex-1 gap-4">
-          <View className="flex-row items-center gap-2 rounded-2xl border border-border bg-surface px-4 py-3">
+        <View className="mt-6 flex-1 pb-10">
+          <View className="flex-row items-center self-center gap-2 rounded-2xl border border-border bg-surface px-4 py-2">
             <PulsingDot color="#30D158" />
-            <Text className="ml-1 flex-1 text-foreground">
+            <Text className="text-sm text-foreground">
               Connected to <Text className="font-semibold">{connection.host}:{connection.port}</Text>
             </Text>
           </View>
 
-          <View className="gap-3 rounded-2xl border border-border bg-surface p-5">
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center gap-2.5">
-                <View className="h-9 w-9 items-center justify-center rounded-xl bg-background">
-                  <Volume2 size={18} color="#34D399" />
-                </View>
-                <View>
-                  <Text className="font-medium text-foreground">Playback</Text>
-                  <Text className="text-xs text-muted">PC → earbuds</Text>
-                </View>
-              </View>
-              <Switch
-                value={connection.playbackEnabled}
-                onValueChange={(value) => void onTogglePlayback(value)}
-              />
-            </View>
-            <AudioVisualizer level={levels.playback} active={connection.playbackEnabled} color="#34D399" />
+          <View className="flex-1 items-center justify-center">
+            <AudioVisualizer level={levels.playback} active={connection.playbackEnabled} color="#34D399" height={220} />
+            <Text className="mt-6 text-base font-medium text-foreground">
+              {connection.playbackEnabled ? 'Playback active' : 'Playback paused'}
+            </Text>
+            <Text className="text-xs text-muted">PC audio → this device</Text>
           </View>
 
-          <View className="gap-3 rounded-2xl border border-border bg-surface p-5">
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center gap-2.5">
-                <View className="h-9 w-9 items-center justify-center rounded-xl bg-background">
-                  <Mic size={18} color="#60A5FA" />
-                </View>
-                <View>
-                  <Text className="font-medium text-foreground">Microphone</Text>
-                  <Text className="text-xs text-muted">earbuds → PC</Text>
-                </View>
-              </View>
-              <Switch
-                value={connection.microphoneEnabled}
-                onValueChange={(value) => void onToggleMicrophone(value)}
-              />
-            </View>
-            <AudioVisualizer level={levels.mic} active={connection.microphoneEnabled} color="#60A5FA" />
-          </View>
+          <Pressable
+            className="w-full flex-row items-center justify-center gap-2 rounded-2xl bg-primary py-4 active:opacity-80"
+            onPress={() => void onTogglePlayback()}
+          >
+            {connection.playbackEnabled ? (
+              <Pause size={20} color="#000000" />
+            ) : (
+              <Play size={20} color="#000000" />
+            )}
+            <Text className="text-base font-semibold text-background">
+              {connection.playbackEnabled ? 'Pause' : 'Resume'}
+            </Text>
+          </Pressable>
         </View>
       ) : null}
     </View>

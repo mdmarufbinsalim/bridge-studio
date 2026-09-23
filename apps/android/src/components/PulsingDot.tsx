@@ -1,10 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { Animated, View } from 'react-native';
 
 /** A status dot with a soft expanding ring pulse, used for the "live" connected indicator. */
 export function PulsingDot({ color = '#30D158', size = 10 }: { color?: string; size?: number }) {
-  const scale = useRef(new Animated.Value(1)).current;
-  const opacity = useRef(new Animated.Value(0.7)).current;
+  const [scale] = useState(() => new Animated.Value(1));
+  const [opacity] = useState(() => new Animated.Value(0.7));
 
   useEffect(() => {
     const loop = Animated.loop(

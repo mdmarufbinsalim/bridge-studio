@@ -7,27 +7,18 @@ import { AudioBridge } from './AudioBridge';
 export interface BridgeAudioConnection {
   clientSession: ClientSession;
   getAudioBridge(): AudioBridge | undefined;
-  /** Intentional, user-initiated disconnect — unlike a network drop, this does not reconnect. */
+  /** Fires once if the server drops the connection (not a user-initiated disconnect()). */
+  onConnectionLost(listener: () => void): void;
   disconnect(): Promise<void>;
 }
 
 const HELLO_DATAGRAM = new TextEncoder().encode('bridgeaudio-hello');
 
-/**
- * Wires the shared ClientSession (reconnection, handshake, framing) to the
- * Android-specific RnTcpConnector, and attaches a fresh AudioBridge to every
- * session the ClientSession establishes (including on reconnect). UI code
- * calls this instead of touching session/transport/native internals
- * directly.
- *
- * Once each session is active, also opens a UDP channel and sends one
- * "hello" datagram to the server's UDP port (same port number as TCP) so
- * the server learns this socket's address and switches audio onto UDP —
- * see Session.attachUdpAudio and apps/desktop/src/server.ts.
- */
 export async function connectToServer(address: TransportAddress): Promise<BridgeAudioConnection> {
   let audioBridge: AudioBridge | undefined;
   let udpChannel: RnUdpChannel | undefined;
+  let userInitiatedDisconnect = false;
+  const lostListeners: (() => void)[] = [];
 
   const clientSession = new ClientSession({
     connector: new RnTcpConnector(),
@@ -48,6 +39,12 @@ export async function connectToServer(address: TransportAddress): Promise<Bridge
         udpChannel?.close();
         udpChannel = undefined;
         void audioBridge?.teardown();
+        if (!userInitiatedDisconnect) {
+          // The server went away unexpectedly — stop ClientSession's own silent background
+          // retry loop and let the UI reset to the initial connect screen instead.
+          clientSession.stop();
+          for (const listener of lostListeners) listener();
+        }
       }
     });
   });
@@ -57,7 +54,9 @@ export async function connectToServer(address: TransportAddress): Promise<Bridge
   return {
     clientSession,
     getAudioBridge: () => audioBridge,
+    onConnectionLost: (listener) => lostListeners.push(listener),
     disconnect: async () => {
+      userInitiatedDisconnect = true;
       clientSession.stop();
       udpChannel?.close();
       udpChannel = undefined;

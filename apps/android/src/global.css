@@ -3,6 +3,17 @@
 @tailwind utilities;
 
 :root {
+  --color-background: 250 250 250;
+  --color-surface: 255 255 255;
+  --color-border: 228 228 231;
+  --color-foreground: 24 24 27;
+  --color-muted: 113 113 122;
+  --color-primary: 16 163 116;
+  --color-online: 22 163 74;
+  --color-offline: 220 38 38;
+}
+
+.dark {
   --color-background: 0 0 0;
   --color-surface: 28 28 30;
   --color-border: 44 44 46;

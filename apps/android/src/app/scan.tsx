@@ -56,17 +56,14 @@ export default function ScanScreen() {
         <View className="h-64 w-64 rounded-2xl border-2 border-primary/70" />
       </View>
       <View className="absolute inset-x-0 top-16 items-center px-6">
-        <Text className="text-center text-foreground">Point your camera at the QR code on your PC</Text>
+        <Text className="text-center text-white">Point your camera at the QR code on your PC</Text>
       </View>
-      <View className="absolute inset-x-0 bottom-12 items-center">
-        <Pressable
-          className="flex-row items-center gap-2 rounded-lg bg-surface px-6 py-3"
-          onPress={() => router.back()}
-        >
-          <X size={18} color="#EBEBF0" />
-          <Text className="text-foreground">Cancel</Text>
-        </Pressable>
-      </View>
+      <Pressable
+        className="absolute right-5 top-14 h-11 w-11 items-center justify-center rounded-full bg-black/50"
+        onPress={() => router.back()}
+      >
+        <X size={22} color="#FFFFFF" />
+      </Pressable>
     </View>
   );
 }
