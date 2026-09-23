@@ -101,7 +101,19 @@
     gap: 16px;
     max-width: 640px;
   }
-  .terminal .cmd { font-size: 14px; overflow-x: auto; white-space: nowrap; min-width: 0; }
+  .terminal .cmd {
+    font-size: 14px;
+    overflow-x: auto;
+    white-space: nowrap;
+    min-width: 0;
+    padding-bottom: 10px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--terminal-line) transparent;
+  }
+  .terminal .cmd::-webkit-scrollbar { height: 5px; }
+  .terminal .cmd::-webkit-scrollbar-track { background: transparent; }
+  .terminal .cmd::-webkit-scrollbar-thumb { background: var(--terminal-line); border-radius: 3px; }
+  .terminal .cmd::-webkit-scrollbar-thumb:hover { background: var(--signal-bright); }
   .terminal .cmd .muted-tok { color: #6d7c75; }
   .copy-btn {
     flex: none;
