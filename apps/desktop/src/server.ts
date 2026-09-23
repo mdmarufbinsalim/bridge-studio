@@ -9,6 +9,24 @@ const PORT = Number(process.env.BRIDGE_AUDIO_PORT ?? 7711);
 const PLAYBACK_ENABLED = process.env.BRIDGE_AUDIO_PLAYBACK !== '0';
 const MICROPHONE_ENABLED = process.env.BRIDGE_AUDIO_MIC !== '0';
 
+// Every currently-active session's teardown functions (which unload its PipeWire virtual mic
+// sink and stop its capture process) live here so a signal handler can run them all on shutdown.
+// Without this, killing the server (even a plain Ctrl+C, not just kill -9) leaves the virtual
+// mic sink loaded forever — Node exits on SIGINT/SIGTERM by default without running any cleanup
+// unless something explicitly listens for the signal and does it.
+const activeStopFns = new Set<() => Promise<void>>();
+
+async function shutdown(): Promise<void> {
+  console.log('[bridge-audio] shutting down, cleaning up active streams...');
+  await Promise.all([...activeStopFns].map((stop) => stop())).catch((error: unknown) => {
+    console.error('[bridge-audio] error during shutdown cleanup:', error);
+  });
+  process.exit(0);
+}
+
+process.on('SIGINT', () => void shutdown());
+process.on('SIGTERM', () => void shutdown());
+
 async function main(): Promise<void> {
   const listener = new TcpListener(PORT);
   // Shared with every session: audio frames switch onto this the moment we learn the
@@ -40,9 +58,13 @@ async function main(): Promise<void> {
       }
 
       if (state === 'closed') {
-        void Promise.all(stopFns.map((stop) => stop())).catch((error: unknown) => {
-          console.error('[bridge-audio] error tearing down streams:', error);
-        });
+        void Promise.all(stopFns.map((stop) => stop()))
+          .catch((error: unknown) => {
+            console.error('[bridge-audio] error tearing down streams:', error);
+          })
+          .finally(() => {
+            for (const stop of stopFns) activeStopFns.delete(stop);
+          });
       }
     });
 
@@ -63,10 +85,14 @@ async function main(): Promise<void> {
     async function activateStreams(): Promise<void> {
       try {
         if (PLAYBACK_ENABLED) {
-          stopFns.push(await startPlaybackForwarding(session, DEFAULT_AUDIO_FORMAT));
+          const stop = await startPlaybackForwarding(session, DEFAULT_AUDIO_FORMAT);
+          stopFns.push(stop);
+          activeStopFns.add(stop);
         }
         if (MICROPHONE_ENABLED) {
-          stopFns.push(await startMicrophoneReceiving(session, DEFAULT_AUDIO_FORMAT));
+          const stop = await startMicrophoneReceiving(session, DEFAULT_AUDIO_FORMAT);
+          stopFns.push(stop);
+          activeStopFns.add(stop);
         }
       } catch (error) {
         console.error('[bridge-audio] failed to activate audio streams:', error);

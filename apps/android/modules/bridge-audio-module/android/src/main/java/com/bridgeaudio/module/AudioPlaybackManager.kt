@@ -9,14 +9,17 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
 /**
- * Chunks queued for playback beyond this are dropped oldest-first. Kept
- * deliberately tight: raising this to add "jitter headroom" was tried and
- * made real-world lag *worse*, not better — it turned out the pipeline
- * wasn't just occasionally jittery, it was chronically running behind
- * real time, so a bigger allowance just became a bigger steady-state
- * delay. Staying tight means we drop back to fresh audio sooner.
+ * Chunks queued for playback beyond this are dropped oldest-first.
+ * Previously kept at 4 (20ms) after doubling this made real-world lag
+ * worse — but that test happened while audio still traveled over TCP,
+ * where a lost packet stalled everything behind it and the pipeline ran
+ * chronically behind real time, so any extra slack just became steady-state
+ * delay. Audio now travels over UDP (a lost packet is just a dropped
+ * frame, not a stall) and drops are also concealed rather than left silent,
+ * so a little more slack here is safe to try again — it should only
+ * absorb brief underrun-causing hiccups, not accumulate a backlog.
  */
-private const val MAX_QUEUED_CHUNKS = 4
+private const val MAX_QUEUED_CHUNKS = 6
 
 /**
  * Plays received PCM16 audio via AudioTrack in streaming mode, routed to
@@ -48,11 +51,17 @@ class AudioPlaybackManager {
 
     val minBufferSize = AudioTrack.getMinBufferSize(sampleRate, channelConfig, encoding)
     require(minBufferSize > 0) { "Unsupported AudioTrack configuration for this device" }
-    // Once handed to track.write(), audio sits in AudioTrack's own internal buffer, which our
-    // drop-oldest queue above has no reach into — a bigger buffer here is pure added latency
-    // that plays out sequentially at hardware rate. Doubling it was tried and measurably made
-    // real-world lag worse, so this stays at the device minimum.
-    val bufferSize = minBufferSize
+    // The bare minimum leaves zero headroom: any brief delay in the writer thread reaching
+    // track.write() again (thread scheduling, a GC pause) drains the hardware buffer dry mid
+    // playback, which is audible as a click/pop — independent of anything network-related.
+    // A modest (not doubled) increase absorbs that without reintroducing the chronic-backlog
+    // problem the old TCP-era doubling caused (see MAX_QUEUED_CHUNKS above for why that's fixed).
+    // AudioTrack requires the buffer size to be a whole multiple of the frame size (channels *
+    // bytes/sample) — minBufferSize always satisfies this, but an arbitrary multiple of it (e.g.
+    // *1.5) isn't guaranteed to; on some devices' minBufferSize values that misalignment throws
+    // at construction. Round down to the nearest valid frame boundary to guarantee it doesn't.
+    val bytesPerFrame = channels * (bitsPerSample / 8)
+    val bufferSize = ((minBufferSize * 3 / 2) / bytesPerFrame) * bytesPerFrame
 
     val track = AudioTrack.Builder()
       .setAudioAttributes(

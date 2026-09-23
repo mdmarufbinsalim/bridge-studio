@@ -6,6 +6,7 @@ import { LogOut, Mic, QrCode, Volume2, Wifi, WifiOff } from 'lucide-react-native
 import type { RootState } from '../store/index';
 import {
   setAddress,
+  setError,
   setMicrophoneEnabled,
   setPlaybackEnabled,
   setStatus,
@@ -35,7 +36,8 @@ export default function StatusScreen() {
       if (connection.playbackEnabled) await bridge?.enablePlayback();
       if (connection.microphoneEnabled) await bridge?.enableMicrophone();
     } catch (error) {
-      dispatch(setStatus('error'));
+      const message = error instanceof Error ? error.message : String(error);
+      dispatch(setError(message));
       console.error('[bridge-audio] connect failed', error);
     }
   };

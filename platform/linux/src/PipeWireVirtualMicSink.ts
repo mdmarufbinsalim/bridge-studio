@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import type { Readable, Writable } from 'node:stream';
 import type { AudioFormat, AudioSink } from '@bridge-audio/audio-core';
-import { loadNullSink, unloadModule } from './pactlHelpers.js';
+import { loadNullSink, loadRemapSource, unloadModule } from './pactlHelpers.js';
 import { pwCatSampleFormat } from './pwCatFormat.js';
 
 export interface PipeWireVirtualMicSinkOptions {
@@ -15,24 +15,32 @@ const DEFAULT_DESCRIPTION = 'BridgeAudio Microphone';
 /**
  * Publishes received PCM as a PipeWire virtual microphone: loads a
  * null-sink via `pactl`, then streams written chunks into it via
- * `pw-cat --playback`. Other Linux apps select `<sinkName>.monitor` as
- * their input device. PipeWire/Pulse specifics stay isolated here — see
+ * `pw-cat --playback`. The sink's `.monitor` source carries the audio, but
+ * simplified device pickers (GNOME Settings, and — per real-world testing
+ * with a Meet call — Chrome's own microphone list) filter out monitor-class
+ * sources entirely, so it never shows up as a selectable microphone there.
+ * A module-remap-source wraps that monitor into a proper, non-monitor
+ * source (see loadRemapSource) that other apps actually select as their
+ * microphone. PipeWire/Pulse specifics stay isolated here — see
  * PipeWireAudioSource for the boundary rationale.
  */
 export class PipeWireVirtualMicSink implements AudioSink {
-  private moduleId: number | undefined;
+  private nullSinkModuleId: number | undefined;
+  private remapSourceModuleId: number | undefined;
   private process: ChildProcessByStdio<Writable, null, Readable> | undefined;
   private readonly sinkName: string;
+  private readonly sourceName: string;
   private readonly description: string;
 
   constructor(readonly format: AudioFormat, options: PipeWireVirtualMicSinkOptions = {}) {
     this.sinkName = options.sinkName ?? DEFAULT_SINK_NAME;
+    this.sourceName = `${this.sinkName}_input`;
     this.description = options.description ?? DEFAULT_DESCRIPTION;
   }
 
   /** The source other apps select as their microphone. */
-  get monitorSourceName(): string {
-    return `${this.sinkName}.monitor`;
+  get microphoneSourceName(): string {
+    return this.sourceName;
   }
 
   async start(): Promise<void> {
@@ -40,7 +48,12 @@ export class PipeWireVirtualMicSink implements AudioSink {
       throw new Error('PipeWireVirtualMicSink already started');
     }
 
-    this.moduleId = await loadNullSink(this.sinkName, this.description);
+    this.nullSinkModuleId = await loadNullSink(this.sinkName, this.description);
+    this.remapSourceModuleId = await loadRemapSource(
+      `${this.sinkName}.monitor`,
+      this.sourceName,
+      this.description,
+    );
 
     const args = [
       '--playback',
@@ -89,9 +102,13 @@ export class PipeWireVirtualMicSink implements AudioSink {
       });
     }
 
-    if (this.moduleId !== undefined) {
-      await unloadModule(this.moduleId);
-      this.moduleId = undefined;
+    if (this.remapSourceModuleId !== undefined) {
+      await unloadModule(this.remapSourceModuleId);
+      this.remapSourceModuleId = undefined;
+    }
+    if (this.nullSinkModuleId !== undefined) {
+      await unloadModule(this.nullSinkModuleId);
+      this.nullSinkModuleId = undefined;
     }
   }
 }

@@ -13,7 +13,7 @@ export async function startMicrophoneReceiving(
 ): Promise<() => Promise<void>> {
   const sink = new PipeWireVirtualMicSink(format);
   await sink.start();
-  console.log(`[bridge-audio] virtual microphone ready: ${sink.monitorSourceName}`);
+  console.log(`[bridge-audio] virtual microphone ready: ${sink.microphoneSourceName}`);
 
   session.onAudioFrame((frame) => {
     if (frame.streamKind === 'microphone') {
