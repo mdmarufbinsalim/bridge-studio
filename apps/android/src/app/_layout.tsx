@@ -1,20 +1,28 @@
 import '../global.css';
+import { View } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Provider } from 'react-redux';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { store } from '../store/index';
 
-function ThemedStatusBar() {
+function ThemedRoot() {
   const { colorScheme } = useColorScheme();
-  return <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />;
+  return (
+    <View className={colorScheme === 'dark' ? 'dark flex-1' : 'flex-1'}>
+      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+      <Stack screenOptions={{ headerShown: false }} />
+    </View>
+  );
 }
 
 export default function RootLayout() {
   return (
     <Provider store={store}>
-      <ThemedStatusBar />
-      <Stack screenOptions={{ headerShown: false }} />
+      <SafeAreaProvider>
+        <ThemedRoot />
+      </SafeAreaProvider>
     </Provider>
   );
 }

@@ -3,11 +3,13 @@ import { Pressable, Text, View } from 'react-native';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import { router } from 'expo-router';
 import { Camera, X } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { parseConnectionUri } from '../lib/connectionUri';
 
 export default function ScanScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const hasScanned = useRef(false);
+  const insets = useSafeAreaInsets();
 
   const onBarcodeScanned = (result: BarcodeScanningResult): void => {
     if (hasScanned.current) return;
@@ -55,11 +57,12 @@ export default function ScanScreen() {
       <View className="absolute inset-0 items-center justify-center">
         <View className="h-64 w-64 rounded-2xl border-2 border-primary/70" />
       </View>
-      <View className="absolute inset-x-0 top-16 items-center px-6">
+      <View className="absolute inset-x-0 items-center px-6" style={{ top: insets.top + 24 }}>
         <Text className="text-center text-white">Point your camera at the QR code on your PC</Text>
       </View>
       <Pressable
-        className="absolute right-5 top-14 h-11 w-11 items-center justify-center rounded-full bg-black/50"
+        className="absolute right-5 h-11 w-11 items-center justify-center rounded-full bg-black/50"
+        style={{ top: insets.top + 12 }}
         onPress={() => router.back()}
       >
         <X size={22} color="#FFFFFF" />

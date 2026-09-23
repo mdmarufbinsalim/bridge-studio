@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import { router, useLocalSearchParams } from 'expo-router';
 import { LogOut, Pause, Play, QrCode, Wifi, WifiOff } from 'lucide-react-native';
@@ -75,7 +76,7 @@ export default function StatusScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background px-6 pt-16">
+    <SafeAreaView edges={['top', 'bottom']} className="flex-1 bg-background px-6 pt-4">
       <View className="flex-row items-center justify-between">
         <View className="flex-row items-center gap-3">
           <View className="h-11 w-11 items-center justify-center rounded-2xl bg-surface">
@@ -101,7 +102,7 @@ export default function StatusScreen() {
       </View>
 
       {connection.status === 'disconnected' || connection.status === 'error' ? (
-        <View className="mt-6 flex-1 items-center justify-center gap-8 pb-28">
+        <View className="mt-6 flex-1 items-center justify-center gap-8 pb-6">
           {connection.status === 'error' ? (
             <View className="items-center gap-4">
               <View className="h-24 w-24 items-center justify-center rounded-full bg-surface">
@@ -132,14 +133,14 @@ export default function StatusScreen() {
       ) : null}
 
       {connection.status === 'connecting' ? (
-        <View className="mt-6 flex-1 items-center justify-center gap-4 pb-28">
+        <View className="mt-6 flex-1 items-center justify-center gap-4 pb-6">
           <ActivityIndicator size="large" color="#34D399" />
           <Text className="text-muted">Connecting to {connection.host}...</Text>
         </View>
       ) : null}
 
       {connection.status === 'connected' ? (
-        <View className="mt-6 flex-1 pb-10">
+        <View className="mt-6 flex-1 pb-2">
           <View className="flex-row items-center self-center gap-2 rounded-2xl border border-border bg-surface px-4 py-2">
             <PulsingDot color="#30D158" />
             <Text className="text-sm text-foreground">
@@ -170,6 +171,6 @@ export default function StatusScreen() {
           </Pressable>
         </View>
       ) : null}
-    </View>
+    </SafeAreaView>
   );
 }
