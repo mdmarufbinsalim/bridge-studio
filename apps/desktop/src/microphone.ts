@@ -1,6 +1,6 @@
 import type { AudioFormat } from '@bridge-audio/audio-core';
 import type { Session } from '@bridge-audio/session';
-import { PipeWireVirtualMicSink } from '@bridge-audio/platform-linux';
+import { PipeWireVirtualMicSink, log } from '@bridge-audio/platform-linux';
 
 /**
  * Publishes audio frames received from the Android microphone stream as a
@@ -13,7 +13,7 @@ export async function startMicrophoneReceiving(
 ): Promise<() => Promise<void>> {
   const sink = new PipeWireVirtualMicSink(format);
   await sink.start();
-  console.log(`[bridge-audio] virtual microphone ready: ${sink.microphoneSourceName}`);
+  log(`[bridge-audio] virtual microphone ready: ${sink.microphoneSourceName}`);
 
   session.onAudioFrame((frame) => {
     if (frame.streamKind === 'microphone') {

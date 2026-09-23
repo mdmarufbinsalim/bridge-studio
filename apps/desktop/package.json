@@ -3,10 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "bridgeaudio": "./dist/cli.js"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "start:dev": "tsx src/server.ts",
+    "cli:dev": "tsx src/cli.ts",
     "test-client": "tsx src/testClient.ts",
     "lint": "oxlint src/"
   },

@@ -2,6 +2,7 @@ import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import type { AudioFormat, AudioSource } from '@bridge-audio/audio-core';
 import { linkPorts } from './pactlHelpers.js';
+import { log } from './log.js';
 import { pwCatSampleFormat } from './pwCatFormat.js';
 
 const HEALTH_CHECK_INTERVAL_MS = 3000;
@@ -91,7 +92,7 @@ export class PipeWireAudioSource implements AudioSource {
     const onData = this.onDataCallback;
     try {
       this.process = await this.spawnAndVerify(onData);
-      console.log('[platform-linux] capture recovered');
+      log('[platform-linux] capture recovered');
     } catch (error) {
       // Target still not ready — logged, not thrown; the next health-check tick retries.
       console.error('[platform-linux] capture (re)start attempt failed, will retry:', error);
@@ -104,7 +105,7 @@ export class PipeWireAudioSource implements AudioSource {
     onData: (chunk: Uint8Array) => void,
   ): Promise<ChildProcessByStdio<null, Readable, Readable>> {
     const target = this.target;
-    console.log(`[platform-linux] capturing desktop audio from: ${target}`);
+    log(`[platform-linux] capturing desktop audio from: ${target}`);
     const args = [
       '--record',
       '--rate',

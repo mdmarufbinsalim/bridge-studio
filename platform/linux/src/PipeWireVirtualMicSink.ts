@@ -89,6 +89,15 @@ export class PipeWireVirtualMicSink implements AudioSink {
     child.on('error', (error) => {
       console.error('[platform-linux] pw-cat playback process error:', error);
     });
+    // Without this, a write() landing in the exact window where the child has already exited
+    // (e.g. during shutdown, racing kill('SIGTERM') against an in-flight audio frame) throws
+    // EPIPE as an unhandled 'error' event on this stream — fatal in Node, confirmed in real-world
+    // testing as a crash mid-shutdown that aborted cleanup and left the virtual sinks leaked. The
+    // `writable` check in write() below is the primary guard; this is the safety net for the race
+    // where that check is still stale.
+    child.stdin.on('error', (error) => {
+      console.error('[platform-linux] pw-cat playback stdin error:', error);
+    });
 
     await new Promise<void>((resolve, reject) => {
       child.once('spawn', () => resolve());

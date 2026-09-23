@@ -1,6 +1,6 @@
 import { bytesPerFrame, createAudioFrame, PcmChunker, type AudioFormat } from '@bridge-audio/audio-core';
 import type { Session } from '@bridge-audio/session';
-import { PipeWireAudioSource, PipeWireVirtualSpeakerSink } from '@bridge-audio/platform-linux';
+import { PipeWireAudioSource, PipeWireVirtualSpeakerSink, log } from '@bridge-audio/platform-linux';
 
 // 5ms @ 48kHz. Audio travels over UDP (see server.ts), so each frame must fit in one IP packet —
 // a fragmented datagram loses everything if any one fragment is lost. 480 samples (10ms, the old
@@ -35,7 +35,7 @@ export async function startPlaybackForwarding(
 ): Promise<() => Promise<void>> {
   const speakerSink = new PipeWireVirtualSpeakerSink();
   await speakerSink.start();
-  console.log(`[bridge-audio] virtual speaker ready: ${speakerSink.sinkNameValue} (set as default output)`);
+  log(`[bridge-audio] virtual speaker ready: ${speakerSink.sinkNameValue} (set as default output)`);
 
   const source = new PipeWireAudioSource(format, { target: speakerSink.monitorName });
   const chunker = new PcmChunker(bytesPerFrame(format) * SAMPLES_PER_CHUNK);
