@@ -51,23 +51,34 @@ if ! command -v pactl >/dev/null 2>&1 || ! command -v pw-cat >/dev/null 2>&1; th
     exit 1
   fi
   log "PipeWire tools (pactl/pw-cat) not found — attempting to install them via your package manager..."
+  # pactl and pw-cat frequently ship in packages separate from the main "pipewire" package itself
+  # (confirmed on Debian/Ubuntu: pactl comes from pulseaudio-utils, pw-cat from pipewire-bin —
+  # installing just pipewire/pipewire-pulse/wireplumber there leaves both commands missing).
+  # Package layout for the others is best-effort based on how each distro's package names usually
+  # split these tools, not independently verified the way the apt case is.
   if command -v apt-get >/dev/null 2>&1; then
-    sudo apt-get update && sudo apt-get install -y pipewire pipewire-pulse pipewire-audio-client-libraries wireplumber
+    sudo apt-get update && sudo apt-get install -y \
+      pipewire pipewire-pulse pipewire-bin pipewire-audio-client-libraries wireplumber pulseaudio-utils
   elif command -v dnf >/dev/null 2>&1; then
-    sudo dnf install -y pipewire pipewire-pulseaudio wireplumber
+    sudo dnf install -y pipewire pipewire-pulseaudio pipewire-utils wireplumber
   elif command -v pacman >/dev/null 2>&1; then
-    sudo pacman -Sy --needed --noconfirm pipewire pipewire-pulse wireplumber
+    sudo pacman -Sy --needed --noconfirm pipewire pipewire-pulse wireplumber libpulse
   elif command -v zypper >/dev/null 2>&1; then
-    sudo zypper install -y pipewire pipewire-pulseaudio wireplumber
+    sudo zypper install -y pipewire pipewire-pulseaudio wireplumber pulseaudio-utils
   elif command -v apk >/dev/null 2>&1; then
-    sudo apk add pipewire pipewire-pulse wireplumber
+    sudo apk add pipewire pipewire-pulse wireplumber pulseaudio-utils
   else
     err "Could not detect a supported package manager (apt/dnf/pacman/zypper/apk) to install PipeWire automatically."
     err "Please install PipeWire yourself (with its PulseAudio-compat layer: pactl, pw-cat), then re-run this installer."
     exit 1
   fi
   if ! command -v pactl >/dev/null 2>&1 || ! command -v pw-cat >/dev/null 2>&1; then
-    err "PipeWire tools still aren't on PATH after installing — you may need to start a new shell session, or install manually."
+    missing=""
+    command -v pactl >/dev/null 2>&1 || missing="${missing}pactl "
+    command -v pw-cat >/dev/null 2>&1 || missing="${missing}pw-cat "
+    err "Still missing after install: ${missing}"
+    err "Your distro likely ships these under different package names than the ones this installer tried."
+    err "Find and install the package(s) providing \"${missing}\" manually, then re-run this installer."
     exit 1
   fi
 fi
