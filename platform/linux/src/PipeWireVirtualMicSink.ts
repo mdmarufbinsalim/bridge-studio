@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import type { Readable, Writable } from 'node:stream';
 import type { AudioFormat, AudioSink } from '@bridge-audio/audio-core';
-import { loadNullSink, loadRemapSource, unloadModule } from './pactlHelpers.js';
+import { OWN_VIRTUAL_SINK_NAME, loadNullSink, loadRemapSource, unloadModule } from './pactlHelpers.js';
 import { pwCatSampleFormat } from './pwCatFormat.js';
 
 export interface PipeWireVirtualMicSinkOptions {
@@ -9,7 +9,6 @@ export interface PipeWireVirtualMicSinkOptions {
   description?: string;
 }
 
-const DEFAULT_SINK_NAME = 'bridgeaudio_mic';
 const DEFAULT_DESCRIPTION = 'BridgeAudio Microphone';
 
 /**
@@ -33,7 +32,7 @@ export class PipeWireVirtualMicSink implements AudioSink {
   private readonly description: string;
 
   constructor(readonly format: AudioFormat, options: PipeWireVirtualMicSinkOptions = {}) {
-    this.sinkName = options.sinkName ?? DEFAULT_SINK_NAME;
+    this.sinkName = options.sinkName ?? OWN_VIRTUAL_SINK_NAME;
     this.sourceName = `${this.sinkName}_input`;
     this.description = options.description ?? DEFAULT_DESCRIPTION;
   }

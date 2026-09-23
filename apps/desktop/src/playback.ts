@@ -14,7 +14,7 @@ import { PipeWireAudioSource } from '@bridge-audio/platform-linux';
 // capacity, which happens routinely — trading bursty-but-lossless delivery for smoother-but-
 // lossy delivery. Sending immediately as PcmChunker produces frames, with no queue in between,
 // is back to being correct: never drops anything that wasn't late/stale.
-const SAMPLES_PER_CHUNK = 240;
+const SAMPLES_PER_CHUNK = 10000;
 export const PLAYBACK_STREAM_ID = 'desktop-playback';
 
 /**

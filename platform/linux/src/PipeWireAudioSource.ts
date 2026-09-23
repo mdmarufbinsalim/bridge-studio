@@ -63,6 +63,7 @@ export class PipeWireAudioSource implements AudioSource {
     onData: (chunk: Uint8Array) => void,
   ): Promise<ChildProcessByStdio<null, Readable, Readable>> {
     const target = this.options.target ?? (await waitForDefaultSinkMonitor());
+    console.log(`[platform-linux] capturing desktop audio from: ${target}`);
     const args = [
       '--record',
       '--rate',

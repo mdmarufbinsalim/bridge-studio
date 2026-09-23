@@ -3,7 +3,23 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
-/** Name of the PipeWire monitor source that carries whatever the default sink is playing. */
+/**
+ * Name of the virtual sink PipeWireVirtualMicSink creates.
+ */
+export const OWN_VIRTUAL_SINK_NAME = 'bridgeaudio_mic';
+
+/**
+ * Name of the PipeWire monitor source that carries whatever the default sink
+ * is playing.
+ *
+ * On a machine with no other real audio hardware, our own virtual sink
+ * becoming the system default is expected and correct — there's nothing
+ * else for PipeWire to prefer. (An earlier version of this function refused
+ * to resolve to our own sink name, on the mistaken assumption that it always
+ * indicated a bug; it doesn't on a speaker-less machine, and the guard just
+ * broke capture entirely for that legitimate case. See loadNullSink for the
+ * actual bug that was causing broken audio in that scenario.)
+ */
 export async function getDefaultSinkMonitorName(): Promise<string> {
   const { stdout } = await execFileAsync('pactl', ['get-default-sink']);
   const sinkName = stdout.trim();
@@ -71,6 +87,16 @@ async function unloadStaleNullSinks(sinkName: string): Promise<void> {
  * Loads a null-sink module so its `<name>.monitor` source can be selected by
  * other apps as a microphone input. Returns the loaded module id, needed to
  * unload it again on stop.
+ *
+ * PipeWire/WirePlumber persists volume (including balance) per device
+ * *name*, not per module instance — so a sink recreated with the same name
+ * inherits whatever balance was last set for a device called that, from any
+ * source (GNOME Settings, pavucontrol, a previous debugging session). That
+ * produced real one-sided audio in testing: the sink came back with one
+ * channel muted (balance -1.0) despite our code never setting a balance at
+ * all. Forcing both channels to equal volume right after creation guarantees
+ * a clean, centered starting point every time, regardless of what a stale
+ * persisted preference says.
  */
 export async function loadNullSink(sinkName: string, description: string): Promise<number> {
   await unloadStaleNullSinks(sinkName);
@@ -85,6 +111,11 @@ export async function loadNullSink(sinkName: string, description: string): Promi
   if (!Number.isFinite(moduleId)) {
     throw new Error(`Unexpected pactl load-module output: ${stdout}`);
   }
+
+  await execFileAsync('pactl', ['set-sink-volume', sinkName, '100%', '100%']).catch((error: unknown) => {
+    console.error(`[platform-linux] could not reset volume/balance on "${sinkName}":`, error);
+  });
+
   return moduleId;
 }
 

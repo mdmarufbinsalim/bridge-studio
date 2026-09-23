@@ -13,6 +13,13 @@ export class NodeUdpChannel implements UdpChannel {
         listener(new Uint8Array(msg), rinfo.address, rinfo.port);
       }
     });
+    // Without a permanent listener here, any post-bind socket error (e.g. a send failing
+    // because the peer just disconnected) is an unhandled 'error' event — fatal in Node,
+    // crashing the entire server process. UDP sends are inherently best-effort; a failed one
+    // should be logged and dropped, not bring the whole thing down.
+    this.socket.on('error', (error) => {
+      console.error('[transport] UDP socket error:', error);
+    });
   }
 
   static bind(port: number, host = '0.0.0.0'): Promise<NodeUdpChannel> {
